@@ -449,3 +449,22 @@ harmless for us: our threshold is 5σ.
 Answer: with a counter-based generator. Each thread hashes (seed, stream id, its own index), so the result doesn't depend on thread scheduling
 or block size, and a CPU reference can reproduce it bit for bit. A sequential generator would need a separate state per thread
 (e.g. cuRAND states with skip-ahead), and those results are tied to the launch configuration.
+
+---
+
+### `star_windows(u, v)` and `render(..., noise_key=(seed, frame))` (`tracker/render_cpu.py`)
+
+**What changed.** (1) The ±5 px box each star is drawn in is now computed by one function, `star_windows`. Its integer bounds are
+sent to the GPU as well, so CPU and GPU draw *exactly* the same pixels. (2) `render` can use the counter-based noise
+(`noise_key=(seed, frame)`) instead of `rng`. That image is what the GPU must reproduce.
+
+**IN / OUT.** `star_windows`: IN u, v (N,) pixels; OUT four (N,) int32 arrays u_min, u_max, v_min, v_max (inclusive, clipped to 0..1023).
+
+**Worked example.** A star at u = 0.2: floor(0.2 − 5) = floor(−4.8) = −5 → clipped to **0**; ceil(0.2 + 5) = ceil(5.2) = **6**. So columns 0..6.
+A star at u = 1023.0: floor(1018.0) = **1018**, ceil(1028.0) = 1028 → clipped to **1023**.
+
+**Why compute the box on the host?** If the GPU computed floor(u − 5) itself in float32, a star whose u − 5 lands within float32
+rounding of an integer could get a box one pixel different. At the box edge (5 px out), a bright star still contributes ~4.5 counts,
+so that would be a visible CPU/GPU mismatch. Integers computed once can't disagree.
+
+**Check.** The refactored renderer is **bit-identical** to the previous one on 30 random skies.

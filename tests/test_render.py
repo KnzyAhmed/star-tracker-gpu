@@ -75,3 +75,23 @@ def test_add_hot_pixels():
     assert extra.min() >= 100.0 and extra.max() <= 2000.0
     assert out.dtype == np.float32
     assert np.array_equal(add_hot_pixels(img.copy(), 0, np.random.default_rng(0)), img)
+
+
+def test_star_windows_clip_to_the_sensor():
+    from tracker.render_cpu import star_windows
+    u = np.array([300.3, 0.2, 1023.0])
+    v = np.array([700.7, 1022.9, 5.0])
+    u_min, u_max, v_min, v_max = star_windows(u, v)
+    assert u_min.tolist() == [295, 0, 1018] and u_max.tolist() == [306, 6, 1023]
+    assert v_min.tolist() == [695, 1017, 0] and v_max.tolist() == [706, 1023, 10]
+
+
+def test_counter_noise_option():
+    """noise_key=(seed, frame) adds READ_NOISE * pixel_normals(seed, frame): the GPU-reproducible noise."""
+    from tracker.noise import pixel_normals
+    u, v, f = np.array([300.3]), np.array([700.7]), np.array([5000.0])
+    clean = render(u, v, f)
+    noisy = render(u, v, f, noise_key=(4, 9))
+    assert np.array_equal(noisy, clean + np.float32(READ_NOISE) * pixel_normals(4, 9))
+    assert np.array_equal(noisy, render(u, v, f, noise_key=(4, 9)))          # reproducible
+    assert np.array_equal(render(u, v, f, noise_key=(4, 9), read_noise=0.0), clean)

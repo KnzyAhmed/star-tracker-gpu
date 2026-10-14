@@ -189,3 +189,13 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 - **Open question for the owner (blocks render.cu):** the spec caps a frame's star list at 64. Measured: 13/1000 frames have > 64 stars
   in view (max 83). See the chat for options.
 - **Tests.** `tests/test_noise.py`: 5 tests. Suite: **91 passed**.
+
+### Decision: > 64 stars per frame (2026-10-14)
+- Asked the owner; no answer given ("continue"), so I took my recommended option: **render.cu processes the star list in chunks
+  of 64** through shared memory. This keeps the spec's 64-star tile and supports any count (measured max 83). Easy to revisit.
+
+### `tracker/render_cpu.py`: `star_windows`, `render(noise_key=...)`
+- **Built.** Window bounds factored out (int32, inclusive, clipped); the same arrays are given to the GPU. `noise_key=(seed, frame)`
+  adds `read_noise * pixel_normals(seed, frame)`. `rng` and `noise_key` together → ValueError.
+- **Measured.** Bit-identical output to the previous renderer on 30 random skies; day2_gate (50 trials) unchanged in character.
+- **Tests.** 2 new render tests. Suite: **93 passed**.
