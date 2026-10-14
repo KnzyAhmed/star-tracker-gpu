@@ -164,3 +164,24 @@ def test_small_errors_add_in_quadrature():
         A_est = Rotation.from_rotvec(rv).as_matrix() @ A
         total, pointing, roll = attitude_error(A_est, A)
         assert abs(total ** 2 - (pointing ** 2 + roll ** 2)) < 1e-3 * total ** 2 + 1e-9
+
+
+# ---------------------------------------------------------------- Day 2 gate, one field
+
+def test_orion_true_identities_gives_a_few_arcsec():
+    """render -> detect -> match each detection to its true star -> solve. No identification yet."""
+    from scipy.spatial import cKDTree
+    from tracker.camera import unproject
+    from tracker.catalog import load_catalog
+    from tracker.detect_cpu import detect
+    from tracker.render_cpu import BACKGROUND, READ_NOISE, render_sky
+
+    cat = load_catalog(5.5)
+    A = attitude_from_pointing(83.8, -1.0, 0.0)
+    img, u_true, v_true, idx = render_sky(A, cat, rng=np.random.default_rng(1))
+    u, v, f = detect(img, BACKGROUND, READ_NOISE)
+    dist, j = cKDTree(np.column_stack([u_true, v_true])).query(np.column_stack([u, v]))
+    m = dist < 1.5
+    A_est = solve_attitude(unproject(u[m], v[m]), cat.r[idx[j[m]]])
+    total, pointing, roll = attitude_error(A_est, A)
+    assert pointing < 5 and roll < 60

@@ -53,3 +53,18 @@ Dated record of what was built, what was decided (and rejected), measured number
   SciPy `as_rotvec` (works, but hides the maths the owner must explain).
 - **Tests.** 7 new tests (no NaN at identity, pure roll, pure pointing, symmetry, 1 mas precision, 180° cases,
   quadrature total² = pointing² + roll²). Suite: **61 passed**.
+
+### Day 2 gate (2026-10-14): `experiments/day2_gate.py`, `test_orion_true_identities_gives_a_few_arcsec`
+- **Built.** Experiment script: N random attitudes → render (noise on) → detect → nearest true star within 1.5 px →
+  SVD solve with true identities → error. Writes `results/day2_gate.{txt,csv,png}` (results/ is gitignored).
+  Also a single-field integration test (Orion, seed 1): 53 matched stars, **pointing 1.08″, roll 4.22″, total 4.36″**.
+- **Measured (1,000 trials, seed 2, 13.7 ms/frame for render+detect+solve on the laptop CPU, single process):**
+  - Stars in view mean 27.2 (min 9, max 87). Matched 26,803 / 27,211 = 98.5 %. 287 unmatched detections (~0.3/frame,
+    consistent with the 5σ noise false-alarm rate measured earlier).
+  - Centroid error: median **0.103 px**, mean 0.119, p90 0.209, p99 0.383, p99.9 0.862 px. Median 7.3″.
+  - By magnitude: 0.05–0.08 px for mag < 4 (bias-limited), 0.095 at mag 4–5, 0.133 at mag 5–5.5 (noise-limited).
+  - Pair-angle |error|: median 6.1″, p99 30.9″, p99.9 60.2″, max 95.5″.
+  - True-identity attitude: solved 1000/1000. Pointing median **1.67″** (p99 4.8″); roll median **6.80″** (p99 27.9″).
+- **GATE: PASS.** Median centroid error 0.103 < 0.15 px; true-identity pointing ≈ 1.7″ ("a few arcsec").
+- **For Day 3.** eps should come from the pair-angle distribution above. Proposal: ~60″ (p99.9), to be confirmed on Day 3.
+- **Tests.** Suite: **62 passed**.

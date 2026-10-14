@@ -169,3 +169,35 @@ Answer: no, it's geometry. A pointing error shifts every star by about F·δ pix
 centre by only ρ·δ, and ρ is at most ~512 px, compared with F ≈ 2904 px. So roll sensitivity is roughly ρ_rms/F ≈ 1/10 of pointing,
 and its error is ~10× bigger. Fixes: a wider FOV, or a second tracker head mounted at an angle (its boresight
 measures the first one's roll).
+
+---
+
+### Day 2 gate: what the numbers say (`experiments/day2_gate.py`)
+
+**What it does.** It runs 1,000 random attitudes through render → detect → match to truth → solve, using the TRUE
+star identities (cheating on identification on purpose). This separates "how good is the measurement" from
+"did we name the stars right" (Day 3).
+
+**Results (seed 2).** 27.2 stars in view per frame on average (9–87). 98.5 % of them were detected and matched.
+| quantity | median | p99 |
+|---|---|---|
+| centroid error | 0.103 px (7.3″) | 0.383 px |
+| pair-angle error | 6.1″ | 30.9″ (p99.9 60.2″, max 95.5″) |
+| pointing error | 1.67″ | 4.8″ |
+| roll error | 6.80″ | 27.9″ |
+
+**Three things to understand.**
+1. *Bright stars are NOT much better than faint ones* (median 0.05–0.08 px for mag 0–4, 0.13 px at mag 5).
+   With thousands of counts, photon/read noise is tiny, so what's left is **pixel-locking bias** of the 5×5 window
+   (up to 0.10 px, see the `detect` entry). Bright stars are bias-limited and faint stars are noise-limited.
+2. *Roll is ~4× worse than pointing.* This is the geometry explained in the `attitude_error` entry. Sanity check:
+   7.3″ per star / √27 ≈ 1.4″, close to the measured 1.67″ pointing.
+3. *Pair-angle error sets Day 3's eps.* Identification compares measured star-pair angles with catalog pair angles.
+   The tolerance must cover nearly all real pairs, so we take it from this distribution rather than from the centroid
+   error directly. A pair's angle error combines two stars' errors (and bias along the line joining them). Candidate:
+   eps ≈ p99.9 ≈ 60″. Too tight loses true matches; too loose lets in more false catalog pairs.
+
+**Interview question.** *"Why test the solver with true identities before writing the identification step?"*
+Answer: to isolate error sources. If the full pipeline fails later, I already know the measurement chain (render,
+detect, centroid, unproject, solve) is good to ~2″ pointing. So any failure is an identification problem. It also gives
+the measured noise level needed to set the matching tolerance, rather than guessing it.
