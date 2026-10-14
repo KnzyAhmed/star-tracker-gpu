@@ -103,3 +103,14 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   Dedupe is ~15× slower; verification will handle the rare misnamed star. A brightest-20 cap would bound the worst case at 2 ms,
   but it is not needed yet (spec: every pair votes). Kept as an option if Day 3 timing shows a problem.
 - **Tests.** 5 vote tests. Suite: **73 passed**.
+
+### `tracker/identify.py`: `identify`, `consistent_names`, `verify`, `Solution`; `PairTable` gains `r`, `tree`
+- **Built.** vote → pairwise consistency check on the names → SVD → verify (k-d tree, ≥ 4 within eps) → refine → verify.
+  `PairTable` now also keeps the catalog vectors and the k-d tree it was built with (the tree was already being built there).
+- **Decision: the consistency check (not in the spec) is essential.** Measured, eps 60″, real rendered frames:
+  2 hot pixels per frame: with check 500/500 correct, without 0/500 (all "no solution"). Clean frames: 300/300 vs 218/300.
+  Cause: every fake/blended dot gets *some* top-voted name; one wrong name in the SVD shifts the attitude past eps.
+- **Rejected.** Weighting the solve by vote count (a wrong name still has non-zero weight). Repeatedly dropping the worst residual
+  (more iterations; the pair check removes the outliers before the first solve).
+- **Tests.** 6 identify tests (noise-free, 7″ noise, 3 fake dots, random dots → None ×20, too few stars, Orion image end to end
+  with Betelgeuse/Rigel named). Suite: **79 passed**.

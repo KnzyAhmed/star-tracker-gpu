@@ -281,3 +281,47 @@ Answer: it forms pairs with every real star, but its angles match the catalog on
 as a random wrong star (measured 14 vs ≥ 21 for real stars), and the real stars are still named correctly because their votes come from
 real pairs. Its best guess is wrong, but after solving, the catalog star it was "named" as doesn't re-project onto it, so verification
 drops it. Voting degrades gracefully, where a scheme that relies on one specific triangle of stars could be completely broken by one bad dot.
+
+---
+
+### `identify(b, table, eps_arcsec, min_match=4)`: lost in space, end to end (`tracker/identify.py`)
+
+**What it does.** Dots in, attitude and star names out, or an honest "no solution" (`None`). Five steps:
+1. **vote**: each dot gets its top-voted catalog star (previous entry).
+2. **consistency check** (`consistent_names`): for every two named dots, does the catalog angle between their *names*
+   match the angle *measured* between the dots (within eps)? Keep dots that agree with at least half as many others as the best one does.
+3. **solve**: SVD on the consistent dots only.
+4. **verify** (`verify`): rotate *every* dot into the sky with that attitude (r = Aᵀb, row form `b @ A`) and look
+   for a catalog star within eps (k-d tree). Fewer than 4 matched → `None`.
+5. **refine**: re-solve with all matched dots, then verify again.
+
+**IN / OUT.** IN: `b` (N, 3) camera unit vectors; `table` (PairTable, which also holds the catalog vectors and k-d tree); `eps_arcsec`.
+OUT: `Solution(A (3,3), det (K,) indices into b, cat (K,) catalog indices)` or `None`.
+
+**Worked example (consistency check).** Four dots named A, B, C, X. Measured angles vs catalog angles between the names:
+A–B 5.00° vs 5.00° ✓, A–C 12.00° vs 12.01° ✓, B–C 9.00° vs 9.00° ✓, X–A 7.3° vs 15.2° ✗, X–B 3.1° vs 21.0° ✗, X–C 6.6° vs 9.9° ✗.
+Agreement counts: A 2, B 2, C 2, X 0. Threshold = max(2, 2/2) = 2 → keep A, B, C, drop X.
+X was misnamed (maybe a hot pixel). Verification later checks whether it matches anything once the attitude is known.
+
+**Why this way (measured).** Identification with vs without step 2, on real rendered frames:
+
+| frames | with check | without check |
+|---|---|---|
+| 500, each with 2 hot pixels | **500 correct** | 0 correct, 500 no solution |
+| 300, clean | **300 correct** | 218 correct, 82 no solution |
+
+Without the check, one misnamed dot (a hot pixel, a noise false alarm, a blended pair) goes into the SVD with full weight and
+drags the attitude off by arcminutes. Then even the correct stars fail the 60″ verify. The check costs one N² angle comparison.
+- *Why verify at all?* Voting always produces *some* answer, even for a picture of nothing. Verify asks an independent question:
+  "if this attitude is right, do the stars land where the catalog says?" Random dots give `None` in 20/20 tests.
+- *Why ≥ 4 matches?* 3 points can always be fitted reasonably well by *some* rotation, so they make a weak check. The chance that a wrong attitude
+  puts 4 dots within 60″ of catalog stars by luck is tiny (catalog density 0.069 stars/deg², a 60″ disc is 8.7·10⁻⁴ deg²,
+  so it's ~6·10⁻⁵ per dot, to the 4th power).
+- *Why refine?* The first solve uses only the consistent dots. After verify, more dots (including dimmer ones the vote missed) are
+  confirmed, so solving again with all of them is more accurate.
+
+**Interview question.** *"What's the difference between a 'no solution' and a 'wrong' answer, and which is worse?"*
+Answer: "no solution" means the tracker knows it doesn't know. The spacecraft keeps propagating attitude with its gyros and
+tries the next frame. A wrong answer is reported with confidence and fed to the controller, which may then slew the spacecraft
+to the wrong attitude. Wrong is far worse, so the pipeline is designed to convert doubt into "no solution". That's the job of verification,
+and the Monte Carlo counts the two separately.

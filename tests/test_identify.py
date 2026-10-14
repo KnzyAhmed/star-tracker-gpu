@@ -2,9 +2,10 @@
 import numpy as np
 import pytest
 
-from tracker.camera import project, random_attitude
+from tracker.camera import attitude_from_pointing, project, random_attitude, unproject
 from tracker.catalog import load_catalog
-from tracker.identify import ARCSEC, PAIR_MAX_DEG, angle_between, build_pair_table, vote
+from tracker.identify import ARCSEC, PAIR_MAX_DEG, angle_between, build_pair_table, identify, vote
+from tracker.solve import attitude_error
 
 
 def random_unit(rng, n):
@@ -135,3 +136,72 @@ def test_vote_fewer_than_two_stars(cat, table):
     assert best.tolist() == [-1] and votes.tolist() == [0]
     best, votes = vote(np.zeros((0, 3)), table, len(cat), eps_arcsec=60)
     assert len(best) == len(votes) == 0
+
+
+# ---------------------------------------------------------------- identify (vote -> check -> solve -> verify)
+
+def random_dots_in_view(rng, n):
+    """n random directions inside the 20 deg field: dots that match no real sky."""
+    t = np.tan(np.radians(9.5))
+    b = np.column_stack([rng.uniform(-t, t, n), rng.uniform(-t, t, n), np.ones(n)])
+    return b / np.linalg.norm(b, axis=1, keepdims=True)
+
+
+def test_identify_noise_free(cat, table):
+    rng = np.random.default_rng(10)
+    for _ in range(10):
+        A, idx, b = visible_stars(cat, rng)
+        sol = identify(b, table, eps_arcsec=60)
+        assert sol is not None
+        assert attitude_error(sol.A, A)[0] < 1.0
+        assert len(sol.det) == len(b)                         # every dot verified
+        assert same_or_unresolvable(cat, sol.cat, idx[sol.det]).all()
+
+
+def test_identify_with_realistic_noise(cat, table):
+    rng = np.random.default_rng(11)
+    for _ in range(20):
+        A, idx, b = visible_stars(cat, rng)
+        sol = identify(perturb(rng, b, 7), table, eps_arcsec=60)
+        assert sol is not None
+        total, pointing, roll = attitude_error(sol.A, A)
+        assert pointing < 10 and roll < 100
+
+
+def test_identify_ignores_fake_stars(cat, table):
+    rng = np.random.default_rng(12)
+    for _ in range(10):
+        A, idx, b = visible_stars(cat, rng)
+        dots = np.vstack([perturb(rng, b, 7), random_dots_in_view(rng, 3)])
+        sol = identify(dots, table, eps_arcsec=60)
+        assert sol is not None
+        assert attitude_error(sol.A, A)[1] < 10
+        assert np.all(sol.det < len(b))                       # no fake dot was verified
+
+
+def test_random_dots_give_no_solution(cat, table):
+    """A picture of no real sky must say 'no solution', never a confident wrong answer."""
+    rng = np.random.default_rng(13)
+    for _ in range(20):
+        assert identify(random_dots_in_view(rng, 25), table, eps_arcsec=60) is None
+
+
+def test_too_few_stars_give_no_solution(cat, table):
+    rng = np.random.default_rng(14)
+    A, idx, b = visible_stars(cat, rng)
+    for n in [0, 1, 3]:
+        assert identify(b[:n], table, eps_arcsec=60) is None    # verify needs >= 4
+
+
+def test_identify_orion_image(cat, table):
+    """The whole lost-in-space chain on a real rendered image."""
+    from tracker.detect_cpu import detect
+    from tracker.render_cpu import BACKGROUND, READ_NOISE, render_sky
+    A = attitude_from_pointing(83.8, -1.0, 0.0)
+    img, u_true, v_true, idx = render_sky(A, cat, rng=np.random.default_rng(1))
+    u, v, f = detect(img, BACKGROUND, READ_NOISE)
+    sol = identify(unproject(u, v), table, eps_arcsec=60)
+    assert sol is not None
+    total, pointing, roll = attitude_error(sol.A, A)
+    assert pointing < 5 and roll < 60
+    assert {2061, 1713} <= set(cat.hr[sol.cat].tolist())     # Betelgeuse and Rigel named
