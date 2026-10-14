@@ -199,3 +199,9 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   adds `read_noise * pixel_normals(seed, frame)`. `rng` and `noise_key` together → ValueError.
 - **Measured.** Bit-identical output to the previous renderer on 30 random skies; day2_gate (50 trials) unchanged in character.
 - **Tests.** 2 new render tests. Suite: **93 passed**.
+
+### `tracker/batch.py`: `StarBatch`, `pack_frames`, `project_frames`
+- **Built.** CSR packing of per-frame star lists: offsets + per-star du, dv, amp (float32) and box (int32 = CPU windows).
+- **Problem caught before it happened.** float32 u near 1000 is off by 1.2e-5 px, which changes the edge pixels by ~1e-4 relative and would break
+  CPU/GPU equality. Fix: send positions relative to the box corner (error 1.9e-7 px). Amplitude flux/(2πσ²) is precomputed in float64.
+- **Tests.** `tests/test_batch.py`: 5 tests. Suite: **98 passed**.

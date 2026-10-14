@@ -468,3 +468,26 @@ rounding of an integer could get a box one pixel different. At the box edge (5 p
 so that would be a visible CPU/GPU mismatch. Integers computed once can't disagree.
 
 **Check.** The refactored renderer is **bit-identical** to the previous one on 30 random skies.
+
+---
+
+### `pack_frames(frames)` / `project_frames(As, catalog)`: batching for the GPU (`tracker/batch.py`)
+
+**What it does.** The GPU renders 128 frames in one launch, and each frame has a different number of stars. `pack_frames` concatenates all the
+star lists into flat arrays and records where each frame starts (`offsets`). `project_frames` produces those per-frame lists from attitudes,
+the same way `render_sky` does.
+
+**IN / OUT.** IN: list of F tuples (u, v, flux). OUT: `StarBatch` with `offsets` (F+1,) int32, and per star (S total) `du, dv, amp` float32
+and `box` (S, 4) int32.
+
+**Worked example.** Frames with 2, 0 and 1 stars → offsets = [0, 2, 2, 3]. The GPU block for frame 1 reads offsets[1] = 2 and offsets[2] = 2,
+so it has stars 2..1, which is none. Frame 2 has stars 2..2. This is the "CSR" (compressed sparse row) layout.
+
+**Why relative positions (`du = u − u_min`)?** float32 has 24 bits of precision. Near 1000 the step between representable numbers is
+6·10⁻⁵ px, so 1000.7 is stored 1.2·10⁻⁵ px off. Near 5.7 the step is 1000× smaller (measured error 1.9·10⁻⁷ px). The GPU computes
+dx = (x − u_min) − du, where every number involved is small. The obvious approach, sending u in float32 and computing x − u on the GPU,
+shifts the blob slightly, and the brightness at the box edge then disagrees with the CPU by ~10⁻⁴ relative.
+
+**Interview question.** *"Your GPU and CPU results differ in the 4th digit. Where do you look first?"*
+Answer: at large numbers stored in float32 and then subtracted (catastrophic cancellation). Positions, timestamps and global indices are the usual
+suspects. The fix is to subtract on the host in float64 and send small offsets, or keep that one quantity in float64.
