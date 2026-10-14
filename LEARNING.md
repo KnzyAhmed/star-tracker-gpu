@@ -372,3 +372,33 @@ and very slightly more accurate (verify accepts fewer slightly-off stars).
 Answer: it means the failure rate is below ~0.4 % for *these* conditions. To find where it breaks, I push on it: more noise, fake stars,
 sparse sky regions, many more trials. A validation campaign is about finding the edges of the envelope, not about confirming the easy cases.
 That's Day 5.
+
+---
+
+### Stress test: choosing eps from data (and why my first guess was wrong)
+
+**What was done.** The same Monte Carlo, made harder: read noise ×2, ×3, ×4 (fewer faint stars detected, worse centroids) and
+hot pixels (fake dots). Six eps values were tried on identical images.
+
+**Result.** On easy images, every eps works. Under stress, **wide eps collapses**: at noise 15 + 10 hot pixels, 60″ gets 61 % correct and 20–25″ get 90–91 %.
+Below 20″, a different failure starts: at noise 20, 15″ drops to 81 % against 86 % at 25″. The best region is **20–25″**. Recommendation: 25″.
+In every run, wrong answers were **0**. Every failure was an honest "no solution", so verification did its job.
+
+**Why wide eps fails (signal vs noise in the vote).**
+- *Signal:* a true star gets ≈ 1 vote from each other *real* star → (real dots − 1). That doesn't depend on eps.
+- *Noise:* each detected pair matches ~(pairs per arcsec) × 2·eps catalog pairs by coincidence. So coincidence votes grow **in proportion to eps**,
+  and with the number of dots, fakes included.
+- Worked numbers: 15 real stars + 20 hot pixels = 35 dots. A true star's signal is ~14 votes. At eps 60″, a random wrong star expects ~34 × 0.14 ≈ 5 votes,
+  and the luckiest of 2,847 wrong stars reaches ~14–15, which ties or beats the truth. At eps 25″, the expectation drops to ~2, and the luckiest gets ~8: the truth wins.
+- *Too narrow:* if eps is smaller than the real pair-angle errors, true pairs fall outside the window and the *signal* shrinks.
+  That's the 15″ drop at noise 20.
+
+**What I got wrong, and the lesson.** I argued "missing a true pair is worse than letting in a coincidence". That reasoning looked only at
+the signal side. The real trade-off is signal *against* noise, and on our images the noise side dominates. The argument sounded fine; the
+measurement disagreed. That's why the decision waited for data.
+
+**Interview question.** *"How did you choose your matching tolerance?"*
+Answer: not from the centroid error alone. I swept it on identical simulated images under nominal and stressed conditions and counted correct, wrong
+and no-solution outcomes with error bars. The optimum is where the vote's signal (independent of eps) best beats the coincidence noise (∝ eps),
+while staying above the measurement error. Here that's 20–25″, about 3–4× the median pair-angle error. Wider tolerances looked
+"safer" but cut the stressed success rate from 90 % to 61 %.

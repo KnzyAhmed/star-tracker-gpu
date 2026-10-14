@@ -48,6 +48,14 @@ def render(u, v, flux, rng=None, sigma_psf=SIGMA_PSF, background=BACKGROUND,
         image += rng.normal(0, read_noise, size=image.shape)
     return image
 
+def add_hot_pixels(image, n, rng, lo=100.0, hi=2000.0):
+    """Add n hot pixels (fake stars): n DISTINCT random pixels each get +uniform(lo, hi) counts.
+    A real sensor has a few of these; they are single-pixel spikes with no PSF. Modifies and returns image."""
+    flat = rng.choice(image.size, size=n, replace=False)
+    image.flat[flat] += rng.uniform(lo, hi, size=n).astype(image.dtype)
+    return image
+
+
 def render_sky(A, catalog, rng=None, **kwargs):
     """Full pipeline for one frame: attitude + catalog -> image.
 

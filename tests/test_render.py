@@ -63,3 +63,15 @@ def test_render_sky_orion():
     assert 10 <= len(idx) <= 80                             # a 20 deg field holds dozens of bright stars
     assert len(u) == len(v) == len(idx)
     assert 2061 in cat.hr[idx] and 1713 in cat.hr[idx]       # Betelgeuse and Rigel are in view
+
+
+def test_add_hot_pixels():
+    from tracker.render_cpu import add_hot_pixels
+    img = np.full((N_PIX, N_PIX), BACKGROUND, dtype=np.float32)
+    out = add_hot_pixels(img.copy(), 10, np.random.default_rng(0), lo=100.0, hi=2000.0)
+    changed = out != img
+    assert changed.sum() == 10                              # 10 distinct pixels
+    extra = (out - img)[changed]
+    assert extra.min() >= 100.0 and extra.max() <= 2000.0
+    assert out.dtype == np.float32
+    assert np.array_equal(add_hot_pixels(img.copy(), 0, np.random.default_rng(0)), img)

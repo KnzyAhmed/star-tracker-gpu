@@ -2,6 +2,7 @@
 
     python -m experiments.montecarlo                          # 1000 trials, eps 31 45 60
     python -m experiments.montecarlo --trials 200 --eps 60
+    python -m experiments.montecarlo --read-noise 15 --hot-pixels 10 --out results/mc_noise15_hot10
 
 Each frame is rendered and detected ONCE, then identified with every eps, so the eps
 values are compared on exactly the same images. Outcomes are counted separately:
@@ -19,7 +20,7 @@ from tracker.camera import random_attitude, unproject
 from tracker.catalog import load_catalog
 from tracker.detect_cpu import detect
 from tracker.identify import build_pair_table, identify
-from tracker.render_cpu import BACKGROUND, READ_NOISE, render_sky
+from tracker.render_cpu import BACKGROUND, READ_NOISE, add_hot_pixels, render_sky
 from tracker.solve import attitude_error, solve_attitude
 from tracker.stats import wilson_interval
 
@@ -36,6 +37,8 @@ def main():
     p.add_argument("--trials", type=int, default=1000)
     p.add_argument("--seed", type=int, default=3)
     p.add_argument("--eps", type=float, nargs="+", default=[31, 45, 60])
+    p.add_argument("--read-noise", type=float, default=READ_NOISE, help="counts per pixel (baseline 5)")
+    p.add_argument("--hot-pixels", type=int, default=0, help="fake single-pixel stars per frame")
     p.add_argument("--out", default="results/montecarlo_cpu")
     a = p.parse_args()
 
@@ -59,10 +62,12 @@ def main():
         A = random_attitude(rng)
         boresight[t] = A[2]
         s = time.perf_counter()
-        img, _, _, idx = render_sky(A, cat, rng=rng)
+        img, _, _, idx = render_sky(A, cat, rng=rng, read_noise=a.read_noise)
+        if a.hot_pixels:
+            add_hot_pixels(img, a.hot_pixels, rng)
         t_render[t] = time.perf_counter() - s
         s = time.perf_counter()
-        u, v, f = detect(img, BACKGROUND, READ_NOISE)
+        u, v, f = detect(img, BACKGROUND, a.read_noise)
         t_detect[t] = time.perf_counter() - s
         n_true[t], n_det[t] = len(idx), len(u)
         for e, eps in enumerate(a.eps):
@@ -85,6 +90,7 @@ def main():
     pct = np.percentile
     L = [f"Day 3 Monte Carlo (CPU): {N} random attitudes, seed {a.seed}, catalog mag < 5.5, "
          f"pair table {len(table.angle):,} pairs built in {1000 * t_table:.0f} ms (offline, once)",
+         f"conditions: read noise {a.read_noise:g} counts, {a.hot_pixels} hot pixels per frame",
          f"stars in view: mean {n_true.mean():.1f}, min {n_true.min()}, max {n_true.max()};  "
          f"detected: mean {n_det.mean():.1f}, min {n_det.min()}",
          f"correct = total error < {CORRECT_ARCSEC}\"   rates with 95 % Wilson interval", ""]

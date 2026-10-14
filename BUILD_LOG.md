@@ -141,3 +141,31 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 - **eps not decided.** On clean images all three are perfect, so this run cannot separate them. Smaller eps is slightly
   faster and slightly more accurate (fewer slightly-off stars accepted in verify). The difference should only appear
   under stress (more noise, hot pixels), which is a Day 5 experiment, or a quick stress run now. Owner to decide.
+
+### eps stress test (2026-10-14): `add_hot_pixels`, `--read-noise` / `--hot-pixels` in montecarlo.py
+- **Built.** `tracker/render_cpu.add_hot_pixels(image, n, rng, lo=100, hi=2000)`: n distinct pixels get +U(lo, hi) counts
+  (test added first; suite **85 passed**). montecarlo.py gained `--read-noise` (renderer AND detector threshold) and `--hot-pixels`.
+  Hot pixels are only drawn when n > 0, so the baseline run's random stream is unchanged.
+- **Measured: correct rate, 1,000 frames per condition, same images for every eps** (wrong = 0 in EVERY run below,
+  upper bound 0.38 %):
+
+| condition | 15″ | 20″ | 25″ | 31″ | 45″ | 60″ |
+|---|---|---|---|---|---|---|
+| noise 5 (baseline) | 100 | 100 | 100 | 100 | 100 | 100 |
+| noise 10 | | | | 100 | 99.9 | 99.9 |
+| noise 15 | | | | 98.1 | 96.6 | 92.3 |
+| noise 20 | 81.4 | 85.5 | **86.0** | 84.7 | 80.8 | 71.4 |
+| noise 5 + 20 hot pixels | 100 | 100 | 100 | 99.9 | 97.5 | 89.1 |
+| noise 15 + 10 hot pixels | 88.7 | **90.6** | 90.3 | 86.3 | 75.8 | 61.2 |
+
+  95 % intervals ±~2 points at 85–90 %. E.g. noise 15 + hot 10: 20″ [88.6, 92.3], 25″ [88.3, 92.0], 31″ [84.0, 88.3], 60″ [58.1, 64.2].
+  Accuracy of correct frames is the same for all eps within noise (e.g. noise 15+hot 10 pointing median 3.25–3.35″).
+- **My earlier prediction was wrong.** I expected a wide eps to be safer. Under stress, the wide eps fails most.
+- **Diagnosis** (300 frames each): failures happen in the VOTE. Noise 5 + 20 hot, eps 60″: only 83.9 % of real dots get the right
+  top vote (98.9 % at 31″); in the failed frames only 8 % do. Mechanism: true-star votes ≈ (real dots − 1), independent of eps;
+  coincidence votes ∝ eps × total dots. Few real stars (noise hides faint ones) or many fakes → the luckiest wrong star wins.
+- "Too tight" begins below 20″: at noise 20, 15″ drops to 81.4 % (true pairs fall outside the window as centroid errors grow).
+- **Verification held everywhere:** 0 wrong answers in 15,000 identify calls across all stressed runs. Failures are always "no solution".
+- **Recommendation: eps = 25″** (ties 20″ within error bars; ≥ 20″ is the flat top; 25″ keeps more margin from the 15″ cliff and
+  verifies slightly more stars). Owner to decide; nothing in the code defaults to an eps yet.
+- Idea for later (not built): scale eps with the noise level, since the best eps is "a few × the pair-angle error".
