@@ -33,3 +33,42 @@ def build_pair_table(r, max_sep_deg=PAIR_MAX_DEG):
     angle = angle_between(r[ij[:, 0]], r[ij[:, 1]])
     order = np.argsort(angle, kind="stable")
     return PairTable(angle=angle[order], i=ij[order, 0], j=ij[order, 1])
+
+
+ARCSEC = np.pi / (180 * 3600)    # one arcsecond in radians
+
+
+def vote(b, table, n_cat, eps_arcsec):
+    """Geometric voting: guess the catalog star behind each detected star.
+
+    b: (N, 3) camera-frame unit vectors of the detected stars. table: PairTable.
+    n_cat: number of catalog stars. eps_arcsec: angle tolerance.
+    Returns (best, votes), both (N,) int: best catalog index per detected star (-1 if no
+    votes at all) and how many votes it got.
+
+    Every detected pair (a, c) with angle theta looks up all catalog pairs (p, q) with
+    |angle - theta| <= eps. The angle can't tell which end is which, so each such row
+    votes for a->p, a->q, c->p, c->q. The true star collects a vote from almost every
+    pair it is in; wrong stars only collect scattered coincidences.
+    """
+    n = len(b)
+    if n < 2:
+        return np.full(n, -1), np.zeros(n, dtype=int)
+    a, c = np.triu_indices(n, k=1)                                  # all detected pairs
+    theta = angle_between(b[a], b[c])
+    eps = eps_arcsec * ARCSEC
+    lo = np.searchsorted(table.angle, theta - eps, side="left")
+    hi = np.searchsorted(table.angle, theta + eps, side="right")
+    # expand each detected pair into its table rows lo..hi-1, without a Python loop
+    count = hi - lo
+    pair = np.repeat(np.arange(len(a)), count)                      # which detected pair
+    start = np.cumsum(count) - count                                 # first slot of each pair
+    row = lo[pair] + np.arange(count.sum()) - start[pair]            # table row
+    p, q = table.i[row], table.j[row]
+    a, c = a[pair], c[pair]
+    keys = np.concatenate([a * n_cat + p, a * n_cat + q, c * n_cat + p, c * n_cat + q])
+    tally = np.bincount(keys, minlength=n * n_cat).reshape(n, n_cat)
+    best = tally.argmax(axis=1)
+    votes = tally[np.arange(n), best]
+    best[votes == 0] = -1
+    return best, votes

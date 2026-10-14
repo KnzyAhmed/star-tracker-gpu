@@ -81,3 +81,25 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 - **Rejected.** Full N×N angle matrix (O(N²) memory). Cutting at 20° (FOV edge-to-edge): it would miss corner pairs.
 - **Tests.** `tests/test_identify.py`: 6 tests (sorted, angles correct, i<j unique, complete vs brute force,
   covers diagonal, real-catalog size). Suite: **68 passed**.
+
+### `tracker/identify.py`: `vote`, `ARCSEC`
+- **Built.** All detected pairs → atan2 angles → `searchsorted` window [θ−eps, θ+eps] → flat expansion of table rows →
+  4 votes per row (a→p, a→q, c→p, c→q) → one `bincount` over (N × n_cat) → argmax per dot.
+- **Problem 1: a noise-free test failed after a change.** Cause: β Mon A/B (catalog idx 750/751, HR 2356/2357), 9.6″ apart, tie exactly
+  on votes. My test assumed exact identity, which is impossible for doubles closer than eps (36 such catalog pairs < 60″).
+  Fixed **my new (uncommitted) test** to accept the true star or one within eps of it. This is a correction of a wrong expectation,
+  not a weakening: either choice changes the attitude by < eps.
+- **Problem 2: the fake-star test's margin.** I had asserted "fake < half of weakest real" without measuring. Measured: 14 vs 21.
+  Changed the test to assert the property that matters (fake < every real star), with the measured rate in the docstring.
+- **Decision: plain voting, no per-pair dedupe** (300 random fields, 7″ noise, eps 60″):
+
+| variant | median ms | p99 ms | max ms | misnamed stars |
+|---|---|---|---|---|
+| plain, all stars | 2.12 | 9.9 | 19.6 | 0.11 % |
+| plain, brightest 20 | 1.36 | 1.8 | 2.0 | 0.16 % |
+| dedupe, all stars | 30.4 | 310 | 768 | 0 % |
+| dedupe, brightest 20 | 18.7 | 22.9 | 23.5 | 0 % |
+
+  Dedupe is ~15× slower; verification will handle the rare misnamed star. A brightest-20 cap would bound the worst case at 2 ms,
+  but it is not needed yet (spec: every pair votes). Kept as an option if Day 3 timing shows a problem.
+- **Tests.** 5 vote tests. Suite: **73 passed**.

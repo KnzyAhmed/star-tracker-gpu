@@ -242,3 +242,42 @@ Answer: a single star's brightness is a poor ID (magnitudes are noisy and many s
 stars doesn't depend on the attitude, so it can be compared directly with the catalog. Triangles (three angles) are far more
 distinctive per lookup, but the table is much bigger: catalog triples within the FOV number in the tens of millions. Pairs plus
 voting combine many weak clues instead of a few strong ones. It is simple, and it is robust to a missing or fake star.
+
+---
+
+### `vote(b, table, n_cat, eps_arcsec)`: geometric voting (`tracker/identify.py`)
+
+**What it does.** For every pair of detected dots, it measures their angle and finds every catalog pair with
+(almost) the same angle. Each of those catalog pairs says "these two dots might be stars p and q", which gives one vote each
+to p and q for both dots. After all pairs have voted, each dot takes the catalog star with the most votes.
+
+**IN / OUT.** IN: `b` (N, 3) camera unit vectors; `table` (PairTable); `n_cat` = 2,847; `eps_arcsec` (e.g. 60).
+OUT: `best` (N,) catalog index per dot (−1 if no votes), `votes` (N,) how many votes the winner got.
+
+**Worked example by hand.** Three dots D1, D2, D3, measured angles D1–D2 = 5.00°, D1–D3 = 12.00°, D2–D3 = 9.00°.
+The table (with eps) gives: 5.00° → {(A,B), (X,Y)}; 12.00° → {(A,C)}; 9.00° → {(B,C), (X,Z)}.
+- Pair D1–D2 votes A,B,X,Y for D1 and for D2. D1–D3 votes A,C for D1 and D3. D2–D3 votes B,C,X,Z for D2 and D3.
+- D1 tallies: **A 2**, B 1, C 1, X 1, Y 1 → **A**. D2: A 1, **B 2**, C 1, X 2, Y 1, Z 1 → tie B/X (real fields have ~27 dots, so ties
+  this small don't survive). D3: A 1, B 1, **C 2**, X 1, Z 1 → **C**.
+- The right star appears in *every* pair its dot is in. A wrong star needs repeated coincidences.
+
+**Rough numbers.** With 27 dots, the true star gets ~26 votes. A random wrong star gets about
+26 × (chance that one of its own ~170 neighbours lands inside the ±eps window) ≈ 26 × 0.14 ≈ 4 votes. The best wrong star out of 2,847
+gets roughly 10–14. A fake dot (hot pixel) measured 14 against ≥ 21 for every real star.
+
+**Why this way, and what was measured.**
+- *Vectorised expansion.* Each detected pair matches `hi − lo` table rows. `np.repeat` + `cumsum` turns the list of
+  ranges into one flat index array, and `np.bincount` tallies all votes at once. No Python loop over pairs.
+- *Tried and rejected: counting each detected pair at most once per catalog star.* It removes coincidental
+  double votes: misnamed stars drop from 0.11 % to 0 %, and the fake star stays below every real star in 100 % of frames instead of 98.5 %.
+  But it needs a sort (`np.unique`) of up to millions of votes: **30 ms median, 768 ms worst** vs **2.1 ms / 20 ms** for plain.
+  The verify step catches the rare misnamed star much more cheaply.
+- *Close doubles are unresolvable.* β Mon A and B are 9.6″ apart (0.13 px). Both render as one dot, and pair angles can't tell them
+  apart: they tie. The catalog has 36 pairs closer than 60″. Picking either moves the attitude by less than eps, so
+  the tests accept "right star or its unresolvable partner".
+
+**Interview question.** *"A hot pixel appears in the image. What happens in your identification?"*
+Answer: it forms pairs with every real star, but its angles match the catalog only by coincidence. So it gets about as many votes
+as a random wrong star (measured 14 vs ≥ 21 for real stars), and the real stars are still named correctly because their votes come from
+real pairs. Its best guess is wrong, but after solving, the catalog star it was "named" as doesn't re-project onto it, so verification
+drops it. Voting degrades gracefully, where a scheme that relies on one specific triangle of stars could be completely broken by one bad dot.
