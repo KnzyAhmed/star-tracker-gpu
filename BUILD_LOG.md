@@ -120,3 +120,13 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 - **Rejected.** Normal-approximation (Wald) interval: zero width at k = 0 or k = n, and leaves [0, 1].
 - **Tests.** `tests/test_stats.py`: 5 tests (textbook value 81/263, k = n, k = 0, shrinks with n, simulated coverage ≈ 95 %).
   Suite: **84 passed**.
+
+### PAUSED here (2026-10-14), resume point
+- `experiments/montecarlo.py` is **written but not yet run to completion** (stopped by request before it finished).
+  Its numbers are not validated; nothing above depends on it.
+- **Next steps:**
+  1. `python -m experiments.montecarlo` (1,000 trials; compares eps 31″ / 45″ / 60″ on the same images; per-stage timing).
+  2. Check the 300″ correct/wrong threshold against the printed "worst correct" and "smallest wrong" errors.
+  3. Pick eps from the measured correct / wrong / no-solution rates (agreed with the owner: decide by data).
+  4. Log the results here and in LEARNING.md, then stop at the Day 3 gate for review
+     (success well above 90 %; render + detect should dominate the timing).
