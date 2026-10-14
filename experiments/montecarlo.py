@@ -1,6 +1,7 @@
 """Day 3 Monte Carlo: the full CPU tracker on random skies, with per-stage timing.
 
-    python -m experiments.montecarlo                          # 1000 trials, eps 31 45 60
+    python -m experiments.montecarlo                          # 1000 trials, eps 25"
+    python -m experiments.montecarlo --eps 20 25 31           # compare tolerances
     python -m experiments.montecarlo --trials 200 --eps 60
     python -m experiments.montecarlo --read-noise 15 --hot-pixels 10 --out results/mc_noise15_hot10
 
@@ -19,7 +20,7 @@ import numpy as np
 from tracker.camera import random_attitude, unproject
 from tracker.catalog import load_catalog
 from tracker.detect_cpu import detect
-from tracker.identify import build_pair_table, identify
+from tracker.identify import EPS_ARCSEC, build_pair_table, identify
 from tracker.render_cpu import BACKGROUND, READ_NOISE, add_hot_pixels, render_sky
 from tracker.solve import attitude_error, solve_attitude
 from tracker.stats import wilson_interval
@@ -36,7 +37,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--trials", type=int, default=1000)
     p.add_argument("--seed", type=int, default=3)
-    p.add_argument("--eps", type=float, nargs="+", default=[31, 45, 60])
+    p.add_argument("--eps", type=float, nargs="+", default=[EPS_ARCSEC])
     p.add_argument("--read-noise", type=float, default=READ_NOISE, help="counts per pixel (baseline 5)")
     p.add_argument("--hot-pixels", type=int, default=0, help="fake single-pixel stars per frame")
     p.add_argument("--out", default="results/montecarlo_cpu")

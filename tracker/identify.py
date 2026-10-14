@@ -42,6 +42,7 @@ def build_pair_table(r, max_sep_deg=PAIR_MAX_DEG):
 
 
 ARCSEC = np.pi / (180 * 3600)    # one arcsecond in radians
+EPS_ARCSEC = 25.0                # matching tolerance, chosen by the Day 3 stress test (BUILD_LOG)
 
 
 def vote(b, table, n_cat, eps_arcsec):
@@ -102,7 +103,7 @@ def consistent_names(b, names, eps_arcsec):
     return agree >= max(2, agree.max() / 2)
 
 
-def identify(b, table, eps_arcsec, min_match=4):
+def identify(b, table, eps_arcsec=EPS_ARCSEC, min_match=4):
     """Lost in space: detected dots -> attitude and star names, or None ("no solution").
 
     b: (N, 3) camera unit vectors, brightest first. table: PairTable.

@@ -151,7 +151,7 @@ def test_identify_noise_free(cat, table):
     rng = np.random.default_rng(10)
     for _ in range(10):
         A, idx, b = visible_stars(cat, rng)
-        sol = identify(b, table, eps_arcsec=60)
+        sol = identify(b, table)
         assert sol is not None
         assert attitude_error(sol.A, A)[0] < 1.0
         assert len(sol.det) == len(b)                         # every dot verified
@@ -162,7 +162,7 @@ def test_identify_with_realistic_noise(cat, table):
     rng = np.random.default_rng(11)
     for _ in range(20):
         A, idx, b = visible_stars(cat, rng)
-        sol = identify(perturb(rng, b, 7), table, eps_arcsec=60)
+        sol = identify(perturb(rng, b, 7), table)
         assert sol is not None
         total, pointing, roll = attitude_error(sol.A, A)
         assert pointing < 10 and roll < 100
@@ -173,7 +173,7 @@ def test_identify_ignores_fake_stars(cat, table):
     for _ in range(10):
         A, idx, b = visible_stars(cat, rng)
         dots = np.vstack([perturb(rng, b, 7), random_dots_in_view(rng, 3)])
-        sol = identify(dots, table, eps_arcsec=60)
+        sol = identify(dots, table)
         assert sol is not None
         assert attitude_error(sol.A, A)[1] < 10
         assert np.all(sol.det < len(b))                       # no fake dot was verified
@@ -183,14 +183,14 @@ def test_random_dots_give_no_solution(cat, table):
     """A picture of no real sky must say 'no solution', never a confident wrong answer."""
     rng = np.random.default_rng(13)
     for _ in range(20):
-        assert identify(random_dots_in_view(rng, 25), table, eps_arcsec=60) is None
+        assert identify(random_dots_in_view(rng, 25), table) is None
 
 
 def test_too_few_stars_give_no_solution(cat, table):
     rng = np.random.default_rng(14)
     A, idx, b = visible_stars(cat, rng)
     for n in [0, 1, 3]:
-        assert identify(b[:n], table, eps_arcsec=60) is None    # verify needs >= 4
+        assert identify(b[:n], table) is None    # verify needs >= 4
 
 
 def test_identify_orion_image(cat, table):
@@ -200,8 +200,13 @@ def test_identify_orion_image(cat, table):
     A = attitude_from_pointing(83.8, -1.0, 0.0)
     img, u_true, v_true, idx = render_sky(A, cat, rng=np.random.default_rng(1))
     u, v, f = detect(img, BACKGROUND, READ_NOISE)
-    sol = identify(unproject(u, v), table, eps_arcsec=60)
+    sol = identify(unproject(u, v), table)
     assert sol is not None
     total, pointing, roll = attitude_error(sol.A, A)
     assert pointing < 5 and roll < 60
     assert {2061, 1713} <= set(cat.hr[sol.cat].tolist())     # Betelgeuse and Rigel named
+
+
+def test_default_eps_is_the_stress_tested_value():
+    from tracker.identify import EPS_ARCSEC
+    assert EPS_ARCSEC == 25.0

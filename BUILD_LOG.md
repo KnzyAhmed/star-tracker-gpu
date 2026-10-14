@@ -169,3 +169,8 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 - **Recommendation: eps = 25″** (ties 20″ within error bars; ≥ 20″ is the flat top; 25″ keeps more margin from the 15″ cliff and
   verifies slightly more stars). Owner to decide; nothing in the code defaults to an eps yet.
 - Idea for later (not built): scale eps with the noise level, since the best eps is "a few × the pair-angle error".
+
+### eps decided (2026-10-14): **25″** (owner approved)
+- `tracker/identify.EPS_ARCSEC = 25.0`, now the default of `identify()` and of `montecarlo.py --eps`.
+- The identify tests now run at the default 25″ instead of 60″ (stricter; all still pass). The vote tests stay at 60″,
+  where they document voting behaviour. Suite: **86 passed**.
