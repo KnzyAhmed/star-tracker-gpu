@@ -122,3 +122,50 @@ Answer: the unconstrained maximiser of trace(A Bᵀ) over orthogonal matrices is
 The term restricts the answer to proper rotations by flipping the sign on the weakest singular direction. It matters when the
 measurements are inconsistent or nearly degenerate (few stars, near-coplanar vectors, a wrong match). With good data,
 det U det V = +1 and the term does nothing.
+
+---
+
+### `attitude_error(A_est, A_true)`: how wrong is the answer? (`tracker/solve.py`)
+
+**What it does.** It compares the estimated attitude with the truth and reports three angles in arcseconds:
+- **total**: the size of the one rotation that turns the true attitude into the estimate;
+- **pointing**: how far the boresight (where the camera looks) is off;
+- **roll**: how far the image is twisted about the boresight.
+
+**IN / OUT.** IN: two (3, 3) rotation matrices, sky → camera. OUT: `(total, pointing, roll)`, three floats ≥ 0, arcsec.
+
+**The three formulas.** Let dA = A_est · A_trueᵀ (true camera axes → estimated camera axes).
+- total θ: for any rotation, trace = 1 + 2 cos θ and the antisymmetric part dA − dAᵀ holds 2 sin θ · axis.
+  So θ = atan2(|vee(dA − dAᵀ)|, trace − 1). (The two arguments are 2 sin θ and 2 cos θ; the common factor 2 cancels inside atan2.)
+- pointing = atan2(|z_est × z_true|, z_est · z_true), with z = row 2 of A.
+- roll = |atan2(dA₁₀ − dA₀₁, dA₀₀ + dA₁₁)|. For a pure z-rotation by φ, these are 2 sin φ and 2 cos φ.
+  For a general dA, it is still exactly the "twist" angle 2·atan2(q_z, q_w) of dA's quaternion
+  (expand the matrix in quaternion terms: dA₁₀ − dA₀₁ = 4 q_w q_z and dA₀₀ + dA₁₁ = 2(q_w² − q_z²)).
+
+**Worked example by hand.** True: boresight at (RA 83.8°, Dec −5.4°), roll 30°. Estimate: same boresight, roll 30° + 20″.
+dA is then a pure rotation about camera z by φ = 20″ = 9.696·10⁻⁵ rad:
+- dA₁₀ − dA₀₁ = 2 sin φ = 1.9393·10⁻⁴; dA₀₀ + dA₁₁ = 2 cos φ = 2 − 9.4·10⁻⁹.
+- roll = atan2(1.9393·10⁻⁴, 2) = 9.696·10⁻⁵ rad = **20.0″**. The boresights are identical, so pointing = **0**. total = **20.0″**.
+- Check: total² = pointing² + roll² → 400 = 0 + 400 ✓.
+
+**Why atan2, not arccos (measured):**
+
+| true error | clipped arccos((tr−1)/2) | atan2 form |
+|---|---|---|
+| 1 mas | **0.0000 mas** | 1.0000 mas |
+| 10 mas | 10.647 mas (6 % off) | 10.000 mas |
+| 100 mas | 100.069 mas | 100.000 mas |
+
+cos θ ≈ 1 − θ²/2. At θ = 5·10⁻⁹ rad, θ²/2 = 10⁻¹⁷, which is below float64's resolution near 1 (1.1·10⁻¹⁶),
+so the information is gone before arccos even runs. Without the clip, rounding can give 1.0000000000000002 and arccos returns **NaN**.
+sin θ ≈ θ has no such problem. Our errors are arcseconds (5·10⁻⁶ rad), where arccos would still lose about 3 digits.
+
+**Why split pointing and roll.** A narrow-FOV tracker measures pointing much better than roll. All stars sit within about 10° of the
+boresight, so a small twist about the boresight moves each star by only (its distance from the centre) × angle.
+A single "total" number hides this. Every spec sheet quotes the two separately (e.g. "5″ cross-boresight, 40″ about boresight").
+
+**Interview question.** *"Your star tracker's roll error is ~10× its pointing error. Is that a bug?"*
+Answer: no, it's geometry. A pointing error shifts every star by about F·δ pixels. A roll error δ shifts a star at radius ρ from the
+centre by only ρ·δ, and ρ is at most ~512 px, compared with F ≈ 2904 px. So roll sensitivity is roughly ρ_rms/F ≈ 1/10 of pointing,
+and its error is ~10× bigger. Fixes: a wider FOV, or a second tracker head mounted at an angle (its boresight
+measures the first one's roll).

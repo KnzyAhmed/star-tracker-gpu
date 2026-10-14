@@ -43,3 +43,13 @@ Dated record of what was built, what was decided (and rejected), measured number
   30 random-direction stars with 10″ per-axis noise: median total error 3.6″ (50 trials). Theory: 3.4″.
 - **Tests.** `tests/test_solve.py`: 7 new tests (exact recovery, 2 stars, rotation under noise, no reflection,
   zero weight drops an outlier, weight scale invariance, noise averaging). Suite: **54 passed**.
+
+### `tracker/solve.py`: `attitude_error` (2026-10-14)
+- **Built.** `(total, pointing, roll)` in arcsec from dA = A_est A_trueᵀ. Total = atan2 form of the rotation angle;
+  pointing = atan2(|z×z'|, z·z'); roll = twist about camera z, atan2(dA₁₀−dA₀₁, dA₀₀+dA₁₁) (exact, = 2 atan2(q_z, q_w)).
+- **Decisions.** All three are returned as magnitudes ≥ 0 (sign of roll dropped; can add a signed variant if Day 5 needs bias plots).
+  The roll definition is swing-twist, so it is exact at any size, not just a small-angle approximation.
+- **Rejected.** Clipped arccos of (trace−1)/2: measured 0 instead of 1 mas, 6 % off at 10 mas.
+  SciPy `as_rotvec` (works, but hides the maths the owner must explain).
+- **Tests.** 7 new tests (no NaN at identity, pure roll, pure pointing, symmetry, 1 mas precision, 180° cases,
+  quadrature total² = pointing² + roll²). Suite: **61 passed**.

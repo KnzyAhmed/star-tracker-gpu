@@ -1,9 +1,10 @@
 """Day 2: attitude solve (Wahba / SVD) and attitude error. Run:  pytest tests/test_solve.py -q"""
 import numpy as np
 import pytest
+from scipy.spatial.transform import Rotation
 
-from tracker.camera import random_attitude
-from tracker.solve import solve_attitude
+from tracker.camera import attitude_from_pointing, random_attitude
+from tracker.solve import attitude_error, solve_attitude
 
 
 def is_rotation(A):
@@ -92,3 +93,74 @@ def test_noise_averages_down():
         dA = A_est @ A.T
         errs.append(np.degrees(np.arccos(np.clip((np.trace(dA) - 1) / 2, -1, 1))) * 3600)
     assert np.median(errs) < 6.0
+
+
+# ---------------------------------------------------------------- attitude_error
+
+ARCSEC = np.radians(1 / 3600)
+
+
+def rot_x(angle_rad):
+    c, s = np.cos(angle_rad), np.sin(angle_rad)
+    return np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
+
+
+def test_identical_attitudes_give_zero_not_nan():
+    """arccos((trace - 1) / 2) of a value rounded to 1.0000000000000002 is NaN. Must be 0."""
+    rng = np.random.default_rng(10)
+    for _ in range(200):
+        A = random_attitude(rng)
+        errs = attitude_error(A, A)
+        assert len(errs) == 3
+        assert np.all(np.isfinite(errs)) and np.all(np.asarray(errs) < 1e-6)
+
+
+def test_pure_roll_error():
+    A_true = attitude_from_pointing(83.8, -5.4, 30.0)
+    A_est = attitude_from_pointing(83.8, -5.4, 30.0 + 20 / 3600)     # 20 arcsec more roll
+    total, pointing, roll = attitude_error(A_est, A_true)
+    assert abs(total - 20) < 1e-3 and abs(roll - 20) < 1e-3 and pointing < 1e-3
+
+
+def test_pure_pointing_error():
+    """Tilt about the camera x-axis: the boresight moves, no twist about it."""
+    A_true = attitude_from_pointing(200.0, 30.0, 0.0)
+    A_est = rot_x(15 * ARCSEC) @ A_true
+    total, pointing, roll = attitude_error(A_est, A_true)
+    assert abs(total - 15) < 1e-3 and abs(pointing - 15) < 1e-3 and roll < 1e-3
+
+
+def test_errors_are_non_negative_and_symmetric():
+    rng = np.random.default_rng(11)
+    A = random_attitude(rng)
+    A_est = rot_x(-7 * ARCSEC) @ A
+    e1 = np.asarray(attitude_error(A_est, A))
+    e2 = np.asarray(attitude_error(A, A_est))
+    assert np.all(e1 >= 0) and np.allclose(e1, e2, atol=1e-6)
+
+
+def test_milliarcsecond_precision():
+    """1 mas = 4.8e-9 rad. cos of that is 1 - 1.2e-17, which float64 rounds to exactly 1,
+    so an arccos-of-trace formula reports 0. The atan2 form must still see it."""
+    A = attitude_from_pointing(10.0, 20.0, 0.0)
+    total, pointing, roll = attitude_error(rot_x(0.001 * ARCSEC) @ A, A)
+    assert abs(total - 0.001) < 1e-5 and abs(pointing - 0.001) < 1e-5
+
+
+def test_large_errors():
+    A = attitude_from_pointing(10.0, 20.0, 0.0)
+    total, pointing, roll = attitude_error(rot_x(np.pi) @ A, A)        # flipped right over
+    assert abs(total - 648000) < 1e-3 and abs(pointing - 648000) < 1e-3
+    total, pointing, roll = attitude_error(attitude_from_pointing(10.0, 20.0, 180.0), A)
+    assert abs(total - 648000) < 1e-3 and abs(roll - 648000) < 1e-3 and pointing < 1e-3
+
+
+def test_small_errors_add_in_quadrature():
+    """For small errors, total^2 = pointing^2 + roll^2."""
+    rng = np.random.default_rng(12)
+    A = random_attitude(rng)
+    for _ in range(20):
+        rv = rng.normal(scale=30 * ARCSEC, size=3)
+        A_est = Rotation.from_rotvec(rv).as_matrix() @ A
+        total, pointing, roll = attitude_error(A_est, A)
+        assert abs(total ** 2 - (pointing ** 2 + roll ** 2)) < 1e-3 * total ** 2 + 1e-9
