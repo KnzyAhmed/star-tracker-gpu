@@ -32,3 +32,14 @@ Dated record of what was built, what was decided (and rejected), measured number
     **median centroid error 0.101 px**.
   - Speed: 4.9 ms per 1024×1024 frame (laptop CPU, single call, averaged over 50).
 - **Tests.** `tests/test_detect.py`: 22 new tests. Suite: **47 passed**.
+
+### `tracker/solve.py`: `solve_attitude` (2026-10-14)
+- **Built.** SVD solution of Wahba's problem: `B = Σ wᵢ bᵢ rᵢᵀ`, `A = U diag(1,1,det U det V) Vᵀ`, all float64.
+- **Decisions.** `B` is formed as one matrix product `(w b)ᵀ r` (no Python loop over stars). `w=None` → equal weights.
+  No input normalisation or validation; callers pass unit vectors (`unproject`, `catalog.r`).
+- **Rejected.** Linear least squares on A's 9 entries (not a rotation). TRIAD (uses only 2 stars).
+  q-method/QUEST (same optimum; SVD is simpler to explain and more robust).
+- **Measured.** Mirror-image input really triggers `det U det V = −1` (checked, so the test is not vacuous).
+  30 random-direction stars with 10″ per-axis noise: median total error 3.6″ (50 trials). Theory: 3.4″.
+- **Tests.** `tests/test_solve.py`: 7 new tests (exact recovery, 2 stars, rotation under noise, no reflection,
+  zero weight drops an outlier, weight scale invariance, noise averaging). Suite: **54 passed**.

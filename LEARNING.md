@@ -72,3 +72,53 @@ asymmetrically, so the weighted mean is biased toward the window centre. Fixes: 
 (more noise), iterating the window around the latest centroid, fitting a Gaussian PSF (slower,
 near-optimal), or a lookup-table correction calibrated on simulated stars. Defocusing the optics so σ
 is larger relative to the pixels also helps, which is why real trackers defocus.
+
+---
+
+### `solve_attitude(b, r, w=None)`: Wahba's problem by SVD (`tracker/solve.py`)
+
+**What it does.** You know where some stars appear in the camera (`b_i`) and where they are on
+the sky (`r_i`). It finds the one rotation `A` that best turns every `r_i` into its `b_i`.
+That rotation *is* the spacecraft attitude.
+
+**IN / OUT.**
+- IN: `b` (N, 3) camera-frame unit vectors (from `unproject` of detected centroids);
+  `r` (N, 3) sky-frame unit vectors (catalog), row i of each = same star; `w` (N,) weights ≥ 0
+  (None → all 1). Dimensionless. Needs N ≥ 2 non-parallel stars.
+- OUT: `A` (3, 3) float64, proper rotation (Aᵀ A = I, det A = +1), sky → camera: `b ≈ A @ r`.
+
+**The maths in four lines.** Minimise J(A) = ½ Σ wᵢ |bᵢ − A rᵢ|². Because |bᵢ|=|A rᵢ|=1, this equals
+Σ wᵢ − Σ wᵢ bᵢᵀ A rᵢ = const − trace(A Bᵀ), with **B = Σ wᵢ bᵢ rᵢᵀ** (the "attitude profile matrix").
+So maximise trace(A Bᵀ). Write B = U S Vᵀ. The trace is largest when A = U Vᵀ ("rotate V onto U").
+If det(U Vᵀ) = −1, that is a reflection, so flip the axis with the smallest singular value:
+**A = U diag(1, 1, det U · det V) Vᵀ**.
+
+**Worked example by hand.** Camera rolled 90° about its boresight: the sky x-axis appears as camera y, and the sky y-axis appears as camera −x.
+- r₁ = (1,0,0) → b₁ = (0,1,0); r₂ = (0,1,0) → b₂ = (−1,0,0).
+- B = b₁r₁ᵀ + b₂r₂ᵀ = [[0,−1,0],[1,0,0],[0,0,0]].
+- B is already a rotation times diag(1,1,0): U = B + e₃e₃ᵀ = [[0,−1,0],[1,0,0],[0,0,1]], S = diag(1,1,0), V = I.
+  det U = 1, det V = 1 → d = 1.
+- A = U · I · I = [[0,−1,0],[1,0,0],[0,0,1]]. Check: A r₁ = (0,1,0) = b₁ ✓, A r₂ = (−1,0,0) = b₂ ✓.
+  Note the third singular value was 0 (two stars fill only a plane), but the solution is still unique.
+
+**Why this way.**
+- *Obvious wrong approach 1: least squares for the 9 entries of A* (solve A from `b = A r` with `lstsq`). It gives
+  a matrix that is not a rotation (it shears/scales to soak up noise), and you then have to "fix" it.
+- *Obvious wrong approach 2: TRIAD with the two brightest stars.* It is exact for 2 stars, but it throws away the other ~25.
+  SVD uses every star, weighted, in one shot and is optimal in the least-squares sense.
+- *Why `d = det U det V`:* if the data looks mirrored (bad matches, or noise with near-coplanar stars), `U Vᵀ` has det −1.
+  A camera can't see a mirror-image sky, so we take the best *proper* rotation instead. The test
+  `test_never_returns_a_reflection` builds exactly this case and confirms d = −1 is hit.
+- Alternatives that give the same answer: Davenport's q-method (eigenvector of a 4×4 matrix, gives a quaternion) and QUEST
+  (a fast iterative version of q-method used in flight software). SVD is the most robust; 3×3 SVD costs microseconds.
+
+**Accuracy rule of thumb.** For N stars spread over all directions with σ per-axis noise each, each rotation axis is
+known to σ·√(3/(2N)). With N = 30 and σ = 10″ that gives 2.24″ per axis, so the median total error is ≈ 1.54 × 2.24 = 3.4″. Measured: 3.6″.
+In a narrow-FOV camera the stars are NOT spread over all directions: they all sit near the boresight, so
+**roll (about the boresight) is much worse than pointing.** We will see that on the Day 2 gate.
+
+**Interview question.** *"Why does Wahba's SVD solution need the det(U)det(V) term, and when does it matter?"*
+Answer: the unconstrained maximiser of trace(A Bᵀ) over orthogonal matrices is U Vᵀ, which can have det −1 (a reflection).
+The term restricts the answer to proper rotations by flipping the sign on the weakest singular direction. It matters when the
+measurements are inconsistent or nearly degenerate (few stars, near-coplanar vectors, a wrong match). With good data,
+det U det V = +1 and the term does nothing.
