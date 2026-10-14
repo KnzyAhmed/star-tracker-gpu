@@ -402,3 +402,50 @@ Answer: not from the centroid error alone. I swept it on identical simulated ima
 and no-solution outcomes with error bars. The optimum is where the vote's signal (independent of eps) best beats the coincidence noise (∝ eps),
 while staying above the measurement error. Here that's 20–25″, about 3–4× the median pair-angle error. Wider tolerances looked
 "safer" but cut the stressed success rate from 90 % to 61 %.
+
+---
+
+## Day 4: GPU
+
+### How we do GPU work without an NVIDIA GPU
+The Mac can't run CUDA. So: (1) every GPU step has a NumPy twin doing the *same arithmetic*, tested on the Mac;
+(2) the CUDA kernels live in `tracker/kernels/*.cu` and are driven only from `tracker/gpu.py` (CuPy);
+(3) GPU tests begin with `pytest.importorskip("cupy")`, so on the Mac they are skipped, not failed;
+(4) `notebooks/colab_run.ipynb` runs them on a free Colab NVIDIA GPU. The owner runs it and pastes the output back.
+
+### `pixel_normals(seed, frame)` and `hash32(x)`: counter-based noise (`tracker/noise.py`)
+
+**What it does.** It gives every pixel of every frame its own Gaussian noise value, computed only from (seed, frame, pixel).
+The same value comes out on the CPU and on the GPU, in any order.
+
+**IN / OUT.** IN: `seed`, `frame` (ints ≥ 0, fit in 32 bits). OUT: (1024, 1024) float32 standard normals, indexed [v, u].
+Multiply by `READ_NOISE` to get counts.
+
+**Why not `rng.normal`?** A normal RNG is a *sequence*: number k comes after numbers 0..k−1. A million GPU threads running at once
+can't each "take the next number". A counter-based RNG is a function, value = f(key, counter), so thread k just computes f(key, k).
+This is the same idea as Philox/Threefry, which CuPy and JAX use internally.
+
+**The recipe.**
+1. key = hash32(hash32(seed + 0x9E3779B9) + frame); h1 = hash32(key + 2·pixel); h2 = hash32(key + 2·pixel + 1).
+2. Keep the top 24 bits: u1 = (h1 >> 8) + 1 over 2²⁴, in (0, 1]; u2 = (h2 >> 8) / 2²⁴, in [0, 1). 24 bits because float32 has a 24-bit mantissa,
+   so the integer-to-float conversion is *exact* on both machines.
+3. Box-Muller: z = √(−2 ln u1) · cos(2π u2).
+
+**Worked example (the bit tricks), by hand.** Say h1 = 0x00000000 (the worst case). Then h1 >> 8 = 0, plus 1 → u1 = 1/16,777,216 = 5.96·10⁻⁸.
+ln u1 = −16.64, so √(−2 · −16.64) = √33.27 = **5.77**. That is the largest |z| this generator can ever produce (`MAX_SIGMA`).
+Without the "+1", u1 = 0 → ln 0 = −∞ → z = ∞, and one pixel would be infinite. The cap at 5.77σ cuts off a tail of probability ~8·10⁻⁹. That is
+harmless for us: our threshold is 5σ.
+
+**Two traps we hit / avoided.**
+- *hash32(0) = 0.* Without the golden-ratio offset, seed 0, frame 0, pixel 0 would always get u1 = 2⁻²⁴ and come out at −4.84σ.
+  The test checks this.
+- *Speed on the CPU.* 16 ms/frame vs 6.9 ms for `rng.normal`. So the **CPU benchmark keeps `rng.normal`** (the fastest honest CPU
+  method), and counter-based noise is only used for CPU-vs-GPU equality checks. Otherwise the GPU speed-up would be inflated.
+
+**Measured.** Mean, std, 1σ and 3σ tail fractions match a standard normal. Frames, seeds and neighbouring pixels are uncorrelated (|r| < 0.005).
+`detect` on noise-only frames: 0.25 false stars/frame (theory 0.30).
+
+**Interview question.** *"How do you generate random numbers on a GPU reproducibly?"*
+Answer: with a counter-based generator. Each thread hashes (seed, stream id, its own index), so the result doesn't depend on thread scheduling
+or block size, and a CPU reference can reproduce it bit for bit. A sequential generator would need a separate state per thread
+(e.g. cuRAND states with skip-ahead), and those results are tied to the launch configuration.

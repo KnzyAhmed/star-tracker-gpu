@@ -174,3 +174,18 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 - `tracker/identify.EPS_ARCSEC = 25.0`, now the default of `identify()` and of `montecarlo.py --eps`.
 - The identify tests now run at the default 25″ instead of 60″ (stricter; all still pass). The vote tests stay at 60″,
   where they document voting behaviour. Suite: **86 passed**.
+
+## 2026-10-14: Day 4, GPU
+
+### `tracker/noise.py`: `hash32`, `pixel_normals`, `MAX_SIGMA`
+- **Built.** lowbias32 integer hash (uint32, wraps mod 2³²) → key from (seed + golden ratio, frame) → two 24-bit uniforms per pixel
+  → Box-Muller (cos branch), all float32. Pixel counter = v·1024 + u.
+- **Decisions.** 24-bit uniforms (exact float32 conversion on both machines). u1 offset by +1 (never log 0; caps |z| at 5.77).
+  Golden-ratio offset on the seed, because hash32(0) = 0. Checked: without it, pixel (0,0) of seed 0 / frame 0 is fixed at −4.84σ.
+- **Measured.** Statistics OK; false alarms 0.25/frame (theory 0.30). CPU speed 16.0 ms/frame vs `rng.normal` 6.9 ms, so the CPU
+  benchmark (Day 6) keeps `rng.normal`.
+- **Rejected.** Philox (heavier to hand-write identically in NumPy and CUDA). Using both Box-Muller outputs (it would need pixel pairs, which
+  complicates the one-thread-per-pixel mapping).
+- **Open question for the owner (blocks render.cu):** the spec caps a frame's star list at 64. Measured: 13/1000 frames have > 64 stars
+  in view (max 83). See the chat for options.
+- **Tests.** `tests/test_noise.py`: 5 tests. Suite: **91 passed**.
