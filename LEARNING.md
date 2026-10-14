@@ -349,3 +349,26 @@ Rule of thumb: 0 failures in n trials → the failure rate is below about 3/n (t
 **Interview question.** *"You ran 1,000 trials and saw zero wrong answers. What do you claim?"*
 Answer: not "zero wrong answers". I claim the wrong-answer rate is below ~0.4 % (Wilson upper bound 3.8/n, or the rule of three, 3/n), at 95 % confidence.
 To claim < 0.01 % you need ~30,000+ clean trials. That's one reason Day 5 runs 100,000 frames, and why the GPU matters.
+
+---
+
+### Day 3 gate: the Monte Carlo and what it can (and can't) tell us (`experiments/montecarlo.py`)
+
+**Result.** 1,000 random skies: **1000/1000 correct** at eps 31″, 45″ and 60″. With the error bar, that means "≥ 99.62 % at 95 % confidence".
+Zero wrong and zero "no solution". Pointing is 1.7″ and roll 7″ (medians), the same as the Day 2 true-identity numbers.
+So identification costs no accuracy: it finds the same stars we would have used anyway.
+
+**Timing (one CPU core, ms/frame):** render 8.3 (50 %), detect 5.1 (31 %), identify 2.2 (19 %). The SVD is only 0.02 ms.
+The two image stages touch all 1,048,576 pixels; identify touches ~27 stars. That is why Day 4 moves render and detect to the GPU:
+the work is per-pixel and independent, which is what GPUs are built for.
+
+**Why the eps question is still open.** A test only separates two options if at least one of them fails sometimes.
+Here, nothing failed, so all three tie. The differences we expect (a looser eps lets in more coincidences, a tighter one drops real stars
+when noise grows) only show up in harder conditions: more read noise, hot pixels, fewer stars. Clean images can't reveal them.
+The small differences that did show are in the expected direction: smaller eps is faster (fewer candidates per lookup)
+and very slightly more accurate (verify accepts fewer slightly-off stars).
+
+**Interview question.** *"All your trials passed. Is the system done?"*
+Answer: it means the failure rate is below ~0.4 % for *these* conditions. To find where it breaks, I push on it: more noise, fake stars,
+sparse sky regions, many more trials. A validation campaign is about finding the edges of the envelope, not about confirming the easy cases.
+That's Day 5.

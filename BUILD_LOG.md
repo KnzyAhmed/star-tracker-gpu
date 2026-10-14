@@ -121,12 +121,23 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 - **Tests.** `tests/test_stats.py`: 5 tests (textbook value 81/263, k = n, k = 0, shrinks with n, simulated coverage ≈ 95 %).
   Suite: **84 passed**.
 
-### PAUSED here (2026-10-14), resume point
-- `experiments/montecarlo.py` is **written but not yet run to completion** (stopped by request before it finished).
-  Its numbers are not validated; nothing above depends on it.
-- **Next steps:**
-  1. `python -m experiments.montecarlo` (1,000 trials; compares eps 31″ / 45″ / 60″ on the same images; per-stage timing).
-  2. Check the 300″ correct/wrong threshold against the printed "worst correct" and "smallest wrong" errors.
-  3. Pick eps from the measured correct / wrong / no-solution rates (agreed with the owner: decide by data).
-  4. Log the results here and in LEARNING.md, then stop at the Day 3 gate for review
-     (success well above 90 %; render + detect should dominate the timing).
+### `experiments/montecarlo.py`: Day 3 gate (2026-10-14)
+- **Built.** 1,000 random attitudes (seed 3). Each frame is rendered and detected once, then identified at eps 31″, 45″, 60″
+  (same images for all three). Outcomes: correct (total < 300″), wrong, no solution, each with a 95 % Wilson interval.
+  Per-stage timing. One CSV row per trial in `results/montecarlo_cpu.csv` (gitignored).
+- **Measured.** Stars in view: mean 26.8, min 7, max 83.
+
+| eps | correct | wrong | no solution | pointing median / p99 | roll median / p99 | identify median / p99 |
+|---|---|---|---|---|---|---|
+| 31″ | 1000/1000 [99.62, 100] % | 0 [0, 0.38] % | 0 [0, 0.38] % | 1.65″ / 4.53″ | 6.83″ / 26.5″ | 1.59 / 9.4 ms |
+| 45″ | 1000/1000 [99.62, 100] % | 0 | 0 | 1.68″ / 4.84″ | 6.96″ / 28.8″ | 1.80 / 13.0 ms |
+| 60″ | 1000/1000 [99.62, 100] % | 0 | 0 | 1.69″ / 4.91″ | 7.01″ / 28.9″ | 2.19 / 16.2 ms |
+
+  Worst correct frame: 41.6″ total, so the 300″ threshold sits in a wide gap (no wrong frames to bound it from above).
+- **Per-stage time, one CPU core, eps 60″:** render 8.29 ms (50.4 %), detect 5.05 ms (30.8 %), identify 2.19 ms median /
+  3.11 mean (18.8 %, of which the SVD is 0.021 ms). Total 15.7 ms median, 30.0 ms p99.
+  Pair table: 55 ms here vs 8 ms earlier (first call, cold caches); it is built once.
+- **GATE: PASS.** Success 100 % (≥ 99.62 % at 95 %), well above 90 %. Render + detect = **81 %** of the time.
+- **eps not decided.** On clean images all three are perfect, so this run cannot separate them. Smaller eps is slightly
+  faster and slightly more accurate (fewer slightly-off stars accepted in verify). The difference should only appear
+  under stress (more noise, hot pixels), which is a Day 5 experiment, or a quick stress run now. Owner to decide.
