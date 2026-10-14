@@ -68,3 +68,16 @@ Dated record of what was built, what was decided (and rejected), measured number
 - **GATE: PASS.** Median centroid error 0.103 < 0.15 px; true-identity pointing ≈ 1.7″ ("a few arcsec").
 - **For Day 3.** eps should come from the pair-angle distribution above. Proposal: ~60″ (p99.9), to be confirmed on Day 3.
 - **Tests.** Suite: **62 passed**.
+
+## 2026-10-14: Day 3, name the dots
+
+Note on eps (from review): the 1 % miss rate at eps = 31″ applies to a photo's ~350 pairs (≈ 3–4 lost pairs/frame),
+not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off is close → decide by measurement.
+
+### `tracker/identify.py`: `build_pair_table`, `angle_between`, `PairTable`
+- **Built.** k-d tree `query_pairs` with chord radius 2 sin(θ/2), then atan2 angles, stable sort by angle.
+- **Measured.** 266,153 pairs for 2,847 stars (mag < 5.5), built in 8 ms. Exact sensor corner-to-corner angle is 28.00°,
+  so the spec's 28.3° covers it.
+- **Rejected.** Full N×N angle matrix (O(N²) memory). Cutting at 20° (FOV edge-to-edge): it would miss corner pairs.
+- **Tests.** `tests/test_identify.py`: 6 tests (sorted, angles correct, i<j unique, complete vs brute force,
+  covers diagonal, real-catalog size). Suite: **68 passed**.

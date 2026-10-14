@@ -201,3 +201,44 @@ star identities (cheating on identification on purpose). This separates "how goo
 Answer: to isolate error sources. If the full pipeline fails later, I already know the measurement chain (render,
 detect, centroid, unproject, solve) is good to ~2″ pointing. So any failure is an identification problem. It also gives
 the measured noise level needed to set the matching tolerance, rather than guessing it.
+
+---
+
+## Day 3: name the dots
+
+### `build_pair_table(r, max_sep_deg=28.3)`: the offline pair catalog (`tracker/identify.py`)
+
+**What it does.** It lists every pair of catalog stars that could both appear in one photo (closer than the FOV diagonal),
+along with the angle between them, sorted by that angle. It is built once at startup and used for every image.
+
+**IN / OUT.** IN: `r` (N, 3) sky unit vectors (N = 2,847). OUT: `PairTable(angle, i, j)`, each (M,) with M = 266,153.
+`angle` is in radians, ascending; `i < j` are catalog indices.
+
+**Worked example.** Three stars with separations A–B 5°, B–C 9°, A–C 12°. The sorted table is:
+`[(5°, A, B), (9°, B, C), (12°, A, C)]`. Now a photo shows two dots 9.01° apart, and eps = 0.05°.
+Binary search for 8.96° lands at index 1; binary search for 9.06° lands at index 2. So the candidates are rows 1..1 = **(B, C)**.
+That took two `log₂(M)` searches (≈ 18 steps each for M = 266k) instead of scanning 266k rows.
+
+**Why this way.**
+- *Sorted by angle* → any "pairs within eps of θ" query is two binary searches (`np.searchsorted`), O(log M).
+- *k-d tree to build it.* For unit vectors, angle < θ ⇔ chord |rᵢ − rⱼ| < 2 sin(θ/2), so a 3-D radius search finds the
+  pairs directly. Time: 8 ms. The obvious wrong approach is the full N×N angle matrix: 8.1 M entries. That is fine at N = 2,847,
+  but it is O(N²) memory and doesn't scale to fainter catalogs.
+- *Cutoff = 28.3°.* Two stars farther apart than the sensor diagonal can never both be in the photo, so those pairs are
+  pure clutter. The exact corner-to-corner angle is 28.0°; 28.3° (√2 × 20°) is a slightly generous bound.
+- *How crowded is the table?* The number of pairs per arcsec grows like sin θ:
+
+| separation | pairs per arcsec | inside ±31″ | inside ±60″ |
+|---|---|---|---|
+| 2° | 0.34 | 21 | 41 |
+| 10° | 1.71 | 105 | 204 |
+| 20° | 3.36 | 208 | 403 |
+
+So a single measured angle is ambiguous: it matches hundreds of catalog pairs. Identification works only because
+of **voting**: many pairs agreeing on the same star (next entry).
+
+**Interview question.** *"Why store pairs, not single stars, and why not triangles?"*
+Answer: a single star's brightness is a poor ID (magnitudes are noisy and many stars look alike). The angle between two
+stars doesn't depend on the attitude, so it can be compared directly with the catalog. Triangles (three angles) are far more
+distinctive per lookup, but the table is much bigger: catalog triples within the FOV number in the tens of millions. Pairs plus
+voting combine many weak clues instead of a few strong ones. It is simple, and it is robust to a missing or fake star.
