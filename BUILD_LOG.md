@@ -114,3 +114,9 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   (more iterations; the pair check removes the outliers before the first solve).
 - **Tests.** 6 identify tests (noise-free, 7″ noise, 3 fake dots, random dots → None ×20, too few stars, Orion image end to end
   with Betelgeuse/Rigel named). Suite: **79 passed**.
+
+### `tracker/stats.py`: `wilson_interval`
+- **Built.** Wilson score interval (z = 1.96), vectorised. Needed because every rate is reported with a 95 % error bar.
+- **Rejected.** Normal-approximation (Wald) interval: zero width at k = 0 or k = n, and leaves [0, 1].
+- **Tests.** `tests/test_stats.py`: 5 tests (textbook value 81/263, k = n, k = 0, shrinks with n, simulated coverage ≈ 95 %).
+  Suite: **84 passed**.

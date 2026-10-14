@@ -325,3 +325,27 @@ Answer: "no solution" means the tracker knows it doesn't know. The spacecraft ke
 tries the next frame. A wrong answer is reported with confidence and fed to the controller, which may then slew the spacecraft
 to the wrong attitude. Wrong is far worse, so the pipeline is designed to convert doubt into "no solution". That's the job of verification,
 and the Monte Carlo counts the two separately.
+
+---
+
+### `wilson_interval(k, n)`: error bars on a success rate (`tracker/stats.py`)
+
+**What it does.** "We succeeded 997 times out of 1,000" is a measurement with uncertainty. This gives the range the true
+success rate probably lies in (95 % confidence).
+
+**IN / OUT.** IN: `k` successes, `n` trials (ints or arrays). OUT: `(lo, hi)`, rates in [0, 1].
+
+**Worked example by hand.** k = 1000, n = 1000, z = 1.96 (z² = 3.84):
+- p = 1; denom = 1 + 3.84/1000 = 1.00384.
+- centre = (1 + 3.84/2000) / 1.00384 = 1.00192 / 1.00384 = 0.99809.
+- half = 1.96 / 1.00384 × √(0 + 3.84/4,000,000) = 1.9525 × 0.00098 = 0.00191.
+- Interval = **[0.9962, 1.0000]**. So 1000/1000 means "at least 99.6 %", not "100 %".
+
+**Why this way.** The obvious formula p ± 1.96·√(p(1−p)/n) gives [1, 1] for 1000/1000 (zero width, which is absurd), and it can go
+below 0 or above 1 for rare events. Rare events (wrong answers, failures) are exactly what a validation campaign is about.
+Wilson stays sensible at the edges, and the coverage test confirms it covers the truth ~95 % of the time.
+Rule of thumb: 0 failures in n trials → the failure rate is below about 3/n (the "rule of three").
+
+**Interview question.** *"You ran 1,000 trials and saw zero wrong answers. What do you claim?"*
+Answer: not "zero wrong answers". I claim the wrong-answer rate is below ~0.4 % (Wilson upper bound 3.8/n, or the rule of three, 3/n), at 95 % confidence.
+To claim < 0.01 % you need ~30,000+ clean trials. That's one reason Day 5 runs 100,000 frames, and why the GPU matters.
