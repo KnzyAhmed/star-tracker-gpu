@@ -67,6 +67,24 @@ def attitude_from_pointing(ra_deg, dec_deg, roll_deg):
     return A
 
 
+def pointing_from_attitude(A):
+    """Inverse of attitude_from_pointing: rotation A -> (ra_deg, dec_deg, roll_deg).
+
+    ra, dec: where the boresight A[2] points (ra in [0, 360)). roll: angle in (-180, 180]
+    such that attitude_from_pointing(ra, dec, roll) rebuilds A. At roll 0 the camera x-axis
+    is x0 = A0[0] and y-axis y0 = A0[1]; a roll turns x into cos(roll) x0 + sin(roll) y0,
+    so roll = atan2(x . y0, x . x0).
+    """
+    z = A[2]
+    ra = np.degrees(np.arctan2(z[1], z[0])) % 360.0
+    if ra >= 360.0:                     # (-1e-17) % 360 rounds to exactly 360.0
+        ra = 0.0
+    dec = np.degrees(np.arctan2(z[2], np.hypot(z[0], z[1])))
+    A0 = attitude_from_pointing(ra, dec, 0.0)
+    roll = np.degrees(np.arctan2(A[0] @ A0[1], A[0] @ A0[0]))
+    return float(ra), float(dec), float(roll)
+
+
 def project(A, r):
     """Sky unit vectors r (N, 3) -> pixel coordinates (u, v) and a visibility mask.
 

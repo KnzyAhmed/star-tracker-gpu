@@ -548,3 +548,26 @@ Render + detect + star-list download: **0.318 ms/frame**, against 13.4 ms per fr
 Answer: no. Slots are claimed with atomicAdd, and which thread gets there first depends on scheduling. The *set* is deterministic; the order isn't.
 So the host sorts into a canonical order before anything downstream uses the list. The real bug to guard against is overflow: then the *set* would depend on timing too.
 That's why it raises an error.
+
+---
+
+## Day 5: the campaign
+
+### `pointing_from_attitude(A)`: attitude back to (RA, Dec, roll) (`tracker/camera.py`)
+
+**What it does.** It's the inverse of `attitude_from_pointing`: given the 3×3 attitude, it says where the camera looks (RA, Dec of the boresight)
+and how it is rolled. Every campaign row stores this, and the failure sky map plots it.
+
+**IN / OUT.** IN: A (3, 3), sky → camera. OUT: `(ra_deg in [0, 360), dec_deg in [−90, 90], roll_deg in (−180, 180])`.
+
+**Worked example.** Boresight z = A[2] = (0, 0.7071, 0.7071). RA = atan2(0.7071, 0) = **90°**; Dec = atan2(0.7071, √(0² + 0.7071²)) = **45°**.
+For roll: build A0 = attitude_from_pointing(90, 45, 0). If the camera x-axis is A[0] = 0.866·A0[0] + 0.5·A0[1], then
+roll = atan2(0.5, 0.866) = **30°**.
+
+**Why this way.** atan2 for every angle (Dec too, not arcsin), so values at the poles and near ±90° stay accurate. Roll is measured
+*relative to the function we're inverting*, so the round trip is exact by construction, even at the poles where "east" is arbitrary.
+Edge case found: `(−1e−17) % 360` returns exactly 360.0 in floating point, so it's mapped to 0.
+
+**Interview question.** *"Why store RA/Dec/roll instead of the 3×3 matrix or a quaternion?"*
+Answer: for analysis. RA/Dec go straight onto a sky map, and roll is a physical angle you can bin. For computation the matrix (or a quaternion)
+is better: no singularities, and composing rotations is just multiplication. RA/Dec/roll are Euler-like angles, which become ill-defined at the poles.

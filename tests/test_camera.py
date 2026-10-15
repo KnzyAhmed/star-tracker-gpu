@@ -100,3 +100,32 @@ def test_visibility_edges():
     assert project(A, dir_at(9.9))[2][0]
     assert not project(A, dir_at(10.5))[2][0]
     assert not project(A, np.array([[0.0, 0.0, -1.0]]))[2][0]
+
+
+def test_pointing_from_attitude_round_trip():
+    """(ra, dec, roll) -> A -> (ra, dec, roll): the inverse of attitude_from_pointing."""
+    from tracker.camera import pointing_from_attitude
+    rng = np.random.default_rng(4)
+    for _ in range(200):
+        ra, dec, roll = rng.uniform(0, 360), rng.uniform(-89, 89), rng.uniform(-180, 180)
+        ra2, dec2, roll2 = pointing_from_attitude(attitude_from_pointing(ra, dec, roll))
+        assert abs(ra2 - ra) < 1e-9 and abs(dec2 - dec) < 1e-9
+        assert abs((roll2 - roll + 180) % 360 - 180) < 1e-9
+
+
+def test_pointing_from_attitude_any_rotation():
+    """Every attitude (also random ones, also at the poles) is rebuilt exactly; ra in [0, 360)."""
+    from tracker.camera import pointing_from_attitude
+    rng = np.random.default_rng(5)
+    for A in [random_attitude(rng) for _ in range(200)] + [attitude_from_pointing(0.0, 90.0, 30.0)]:
+        ra, dec, roll = pointing_from_attitude(A)
+        assert 0 <= ra < 360 and -90 <= dec <= 90 and -180 < roll <= 180
+        assert np.allclose(attitude_from_pointing(ra, dec, roll), A, atol=1e-12)
+
+
+def test_pointing_ra_never_360():
+    from tracker.camera import pointing_from_attitude
+    z = np.array([1.0, -1e-17, 0.0])                    # boresight a hair below RA 0
+    x = np.cross([0.0, 0.0, 1.0], z); x /= np.linalg.norm(x)
+    A = np.vstack([-x, -np.cross(z, x), z])
+    assert pointing_from_attitude(A)[0] == 0.0

@@ -250,3 +250,13 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   via Pyodide, (C) a Streamlit-style app with a server. **Chose B** for the live part; the Monte Carlo/benchmark charts are stored
   results on a separate tab. GitHub Pages, public. Scheduled after Days 5–6 so the results tab has real numbers. Spec added to the project plan.
 - Rejected: C (needs a running server). GPU live on the web (no GPUs on free static hosting; GPU numbers come from the Colab runs).
+
+## 2026-10-15: Day 5, campaign
+
+- Colab GPU runs now use the owner's private Google account (knzy.elmasry88@gmail.com, Chrome connection "priv knzy"), whose Drive
+  is not full. Verified the account on Colab's account button before any action.
+
+### `tracker/camera.py`: `pointing_from_attitude` (new; existing functions unchanged)
+- **Built.** Boresight → RA (mod 360), Dec (atan2), roll from the camera x-axis against attitude_from_pointing(ra, dec, 0).
+- **Problem.** `(-1e-17) % 360 == 360.0` in float64 → mapped to 0 (test added).
+- **Tests.** 3 new (round trip from angles, rebuild of 200 random attitudes + a pole case, RA never 360). Suite: **105 passed**.
