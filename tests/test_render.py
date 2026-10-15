@@ -95,3 +95,15 @@ def test_counter_noise_option():
     assert np.array_equal(noisy, clean + np.float32(READ_NOISE) * pixel_normals(4, 9))
     assert np.array_equal(noisy, render(u, v, f, noise_key=(4, 9)))          # reproducible
     assert np.array_equal(render(u, v, f, noise_key=(4, 9), read_noise=0.0), clean)
+
+
+def test_draw_hot_pixels_is_what_add_hot_pixels_adds():
+    """The draw is separate so the GPU can add the very same hot pixels."""
+    from tracker.render_cpu import add_hot_pixels, draw_hot_pixels
+    flat_idx, values = draw_hot_pixels(25, np.random.default_rng(7))
+    assert flat_idx.shape == values.shape == (25,) and values.dtype == np.float32
+    assert len(np.unique(flat_idx)) == 25 and flat_idx.max() < N_PIX * N_PIX
+    img = np.full((N_PIX, N_PIX), BACKGROUND, dtype=np.float32)
+    expected = img.copy()
+    expected.flat[flat_idx] += values
+    assert np.array_equal(add_hot_pixels(img, 25, np.random.default_rng(7)), expected)

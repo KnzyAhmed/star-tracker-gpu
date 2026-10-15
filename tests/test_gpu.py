@@ -127,3 +127,15 @@ def test_detect_overflow_fails_loudly():
     img = add_hot_pixels(np.full((1024, 1024), BACKGROUND, dtype=np.float32), 400, np.random.default_rng(3))
     with pytest.raises(RuntimeError, match="capacity"):
         gpu.detect_batch(cp.asarray(img[None]), BACKGROUND, READ_NOISE, capacity=256)
+
+
+def test_hot_pixels_on_gpu_equal_cpu():
+    from tracker.render_cpu import draw_hot_pixels
+    rng = np.random.default_rng(4)
+    draws = [draw_hot_pixels(n, rng) for n in (0, 5, 40)]                 # three frames
+    flat = np.full((3, 1024, 1024), BACKGROUND, dtype=np.float32)
+    gpu_imgs = gpu.add_hot_pixels_batch(cp.asarray(flat), draws)
+    cpu = flat.copy()
+    for k, (idx, val) in enumerate(draws):
+        cpu[k].flat[idx] += val
+    assert np.array_equal(cp.asnumpy(gpu_imgs), cpu)

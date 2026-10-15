@@ -65,11 +65,19 @@ def render(u, v, flux, rng=None, sigma_psf=SIGMA_PSF, background=BACKGROUND,
         image += np.float32(read_noise) * pixel_normals(*noise_key, n_pix=n_pix)
     return image
 
+def draw_hot_pixels(n, rng, n_pix=N_PIX, lo=100.0, hi=2000.0):
+    """Where and how bright: n DISTINCT flat pixel indices (v * n_pix + u) and float32 extra
+    counts uniform(lo, hi). Drawn once on the host so CPU and GPU add identical hot pixels."""
+    flat_idx = rng.choice(n_pix * n_pix, size=n, replace=False)
+    values = rng.uniform(lo, hi, size=n).astype(np.float32)
+    return flat_idx, values
+
+
 def add_hot_pixels(image, n, rng, lo=100.0, hi=2000.0):
-    """Add n hot pixels (fake stars): n DISTINCT random pixels each get +uniform(lo, hi) counts.
-    A real sensor has a few of these; they are single-pixel spikes with no PSF. Modifies and returns image."""
-    flat = rng.choice(image.size, size=n, replace=False)
-    image.flat[flat] += rng.uniform(lo, hi, size=n).astype(image.dtype)
+    """Add n hot pixels (fake stars): single-pixel spikes with no PSF, as on a real sensor.
+    Modifies and returns image."""
+    flat_idx, values = draw_hot_pixels(n, rng, image.shape[0], lo, hi)
+    image.flat[flat_idx] += values.astype(image.dtype)
     return image
 
 

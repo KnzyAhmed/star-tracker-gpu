@@ -85,3 +85,19 @@ def detect_batch(images, background, read_noise, k_sigma=5, capacity=DETECT_CAPA
         order = np.lexsort((u, v, -flux))       # brightest first; ties broken by position, so stable
         found.append((u[order], v[order], flux[order]))
     return found
+
+
+def add_hot_pixels_batch(images, draws):
+    """Add hot pixels in place on the GPU. draws: one (flat_idx, values) per frame, from
+    render_cpu.draw_hot_pixels, so the CPU reference adds exactly the same values.
+    Indices within a frame are distinct, so a plain scatter-add is safe."""
+    F, H, W = images.shape
+    if len(draws) != F:
+        raise ValueError("need one draw per frame")
+    idx = [f * H * W + np.asarray(d[0], dtype=np.int64) for f, d in enumerate(draws)]
+    val = [np.asarray(d[1], dtype=np.float32) for d in draws]
+    if sum(len(i) for i in idx):
+        flat = images.reshape(-1)                                  # a view: writes go to images
+        g = cp.asarray(np.concatenate(idx))
+        flat[g] += cp.asarray(np.concatenate(val))
+    return images
