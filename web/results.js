@@ -1,20 +1,22 @@
 // Results tab: STORED results from the Day 5 campaign and Day 6 benchmark (not computed live).
-// Every number shown is read from the JSON files the experiments wrote.
+// Every number shown is read from the JSON files the experiments wrote. Figures are the dark variants.
 "use strict";
 
 (function () {
   let done = false;
   const pct = (k, n, dp = 2) => (100 * k / n).toFixed(dp);
   const ci = (lo, hi, dp = 2) => `[${(100 * lo).toFixed(dp)}, ${(100 * hi).toFixed(dp)}]`;
+  const fig = (src, alt, cap) => `<figure><img src="${src}" alt="${alt}" loading="lazy"><figcaption>${cap}</figcaption></figure>`;
+  const h = (num, text) => `<h2 class="res-h"><span class="num">${num}</span><span class="cap">${text}</span></h2>`;
 
   function sweepTable(title, unit, s) {
     const rows = s.level.map((lv, i) =>
       `<tr><td>${lv}</td><td>${s.n[i].toLocaleString()}</td><td>${pct(s.correct[i], s.n[i])} %</td>` +
       `<td>${ci(s.correct_lo[i], s.correct_hi[i])}</td><td>${s.wrong[i]}</td><td>${s.no_solution[i].toLocaleString()}</td>` +
       `<td>${s.mean_detected[i].toFixed(1)}</td></tr>`).join("");
-    return `<div class="panel res-table"><h2>${title}</h2><table class="cmp">
+    return `<div class="res-table"><table class="cmp">
       <tr><th>${unit}</th><th>trials</th><th>correct</th><th>95 % CI</th><th>wrong</th><th>no solution</th><th>dots / frame</th></tr>
-      ${rows}</table></div>`;
+      ${rows}</table><p class="muted small" style="margin:8px 0 0">${title}</p></div>`;
   }
 
   async function render() {
@@ -33,44 +35,38 @@
       const n = cpu.host.cores, g = gpu.gpu.ms_per_frame_median, gpuRD = g.pack + g.gpu_wall;
       el.innerHTML = `
         <div class="tiles">
-          <div class="tile"><div class="num">${b.correct.toLocaleString()} / ${b.n.toLocaleString()}</div>
-            <div class="lbl">random skies solved (≥ ${(100 * b.correct_ci[0]).toFixed(3)} % at 95 % confidence)</div></div>
-          <div class="tile"><div class="num">${wrongAll} wrong</div><div class="lbl">in all ${totalTrials.toLocaleString()} trials, every noise and fake-star level: failures are always "no solution"</div></div>
-          <div class="tile"><div class="num">${b.pointing_pct.p50.toFixed(1)}″</div><div class="lbl">median pointing error (p99 ${b.pointing_pct.p99.toFixed(1)}″; roll ${b.roll_pct.p50.toFixed(1)}″)</div></div>
-          <div class="tile"><div class="num">${(thr[`${n}-false`] / gpuRD).toFixed(1)}×</div>
+          <div class="tile"><div class="big">${b.correct.toLocaleString()} / ${b.n.toLocaleString()}</div>
+            <div class="lbl">random skies solved, normal noise (≥ ${(100 * b.correct_ci[0]).toFixed(3)} % at 95 % confidence)</div></div>
+          <div class="tile"><div class="big">${wrongAll} wrong</div><div class="lbl">in all ${totalTrials.toLocaleString()} trials at every noise and fake-star level: a failure is always "no solution"</div></div>
+          <div class="tile"><div class="big">${b.pointing_pct.p50.toFixed(1)}″</div><div class="lbl">median pointing error (p99 ${b.pointing_pct.p99.toFixed(1)}″; roll ${b.roll_pct.p50.toFixed(1)}″)</div></div>
+          <div class="tile"><div class="big">${(thr[`${n}-false`] / gpuRD).toFixed(1)}×</div>
             <div class="lbl">Tesla T4 vs all ${n} cores of an ${cpu.host.cpu} on the image stages (${(thr["1-false"] / gpuRD).toFixed(0)}× vs one core)</div></div>
         </div>
-        <p class="note">These are <b>stored</b> results. The ${totalTrials.toLocaleString()}-frame campaign and the benchmark ran on an NVIDIA Tesla T4 (Google Colab, 70 W)
-          with hand-written CUDA kernels; a web page can't run those, so the live tab uses the CPU version of the same code.</p>
-        <h2>Where and why it fails</h2>
+        ${h("01", "Where it fails")}
         <div class="res-grid">
-          <figure><img src="results/day5/failure_map.png" alt="Sky map of failures over star density" loading="lazy">
-            <figcaption>Failures cluster in sparse sky, away from the Milky Way: fewer stars means a weaker vote.</figcaption></figure>
-          <figure><img src="results/day5/success_vs_stars.png" alt="Success rate versus stars in view" loading="lazy">
-            <figcaption>At 4× noise, success rises from 0 % (&lt; 10 stars in view) to 100 % (40+).</figcaption></figure>
+          ${fig("results/day5/dark/failure_map.png", "Sky map of failures over star density",
+                "Every non-correct trial, over the density of catalog stars. Failures cluster in sparse sky, away from the Milky Way: fewer stars means a weaker vote.")}
+          ${fig("results/day5/dark/success_vs_stars.png", "Success rate versus stars in view",
+                "At 4× noise, success rises from 0 % (fewer than 10 stars in view) to 100 % (40 or more).")}
         </div>
-        <h2>Robustness</h2>
+        ${h("02", "Robustness")}
         <div class="res-grid">
-          <figure><img src="results/day5/read_noise_sweep.png" alt="Success versus read noise" loading="lazy">
-            <figcaption>Read-noise sweep, 10,000 skies per level (the same skies at every level).</figcaption></figure>
-          <figure><img src="results/day5/hot_pixels_sweep.png" alt="Success versus hot pixels" loading="lazy">
-            <figcaption>Fake stars (hot pixels) per frame, 10,000 skies per level.</figcaption></figure>
+          ${fig("results/day5/dark/read_noise_sweep.png", "Success versus read noise", "Read-noise sweep, 10,000 skies per level, the same skies at every level.")}
+          ${fig("results/day5/dark/hot_pixels_sweep.png", "Success versus hot pixels", "Fake stars (hot pixels) per frame, 10,000 skies per level.")}
+          ${sweepTable("Read-noise sweep (counts per pixel).", "read noise", s.read_noise)}
+          ${sweepTable("Fake-star sweep, read noise 5.", "hot pixels", s.hot_pixels)}
         </div>
-        <div class="res-grid" style="margin-top:16px">
-          ${sweepTable("Read-noise sweep", "read noise", s.read_noise)}
-          ${sweepTable("Fake-star sweep (read noise 5)", "hot pixels", s.hot_pixels)}
-        </div>
-        <h2>Accuracy</h2>
-        <div class="res-grid"><figure><img src="results/day5/accuracy_hist.png" alt="Pointing and roll error histograms" loading="lazy">
-          <figcaption>Pointing and roll errors of the ${b.n.toLocaleString()} baseline trials.</figcaption></figure></div>
-        <h2>CPU vs GPU</h2>
-        <div class="res-grid"><figure><img src="results/day6/benchmark.png" alt="Benchmark chart" loading="lazy">
-          <figcaption>Render + detect: ${thr["1-false"].toFixed(2)} ms on 1 core, ${thr[`${n}-false`].toFixed(2)} ms on ${n} cores,
-          ${gpuRD.toFixed(2)} ms on the T4 (transfers included). End to end, identification on the CPU becomes the bottleneck (Amdahl's law).</figcaption></figure></div>
-        <p class="small muted">CPU: ${cpu.host.cpu} (${cpu.host.cores_detail || n + " cores"}, ${cpu.host.power_source} power). GPU: ${gpu.host.gpu}.
-          Colab host: ${gpu.host.cpu}, ${gpu.host.cores} vCPU.</p>`;
+        ${h("03", "Accuracy")}
+        <div class="res-grid">${fig("results/day5/dark/accuracy_hist.png", "Pointing and roll error histograms",
+          `Pointing and roll errors of the ${b.n.toLocaleString()} baseline trials.`)}</div>
+        ${h("04", "CPU vs GPU")}
+        <div class="res-grid">${fig("results/day6/dark/benchmark.png", "Benchmark chart",
+          `Render + detect: ${thr["1-false"].toFixed(2)} ms on 1 core, ${thr[`${n}-false`].toFixed(2)} ms on ${n} cores, ` +
+          `${gpuRD.toFixed(2)} ms on the T4 (transfers included). End to end, identification on the CPU becomes the bottleneck (Amdahl's law).`)}</div>
+        <p class="hardware">CPU: ${cpu.host.cpu} (${cpu.host.cores_detail || n + " cores"}, ${cpu.host.power_source} power) · GPU: ${gpu.host.gpu} ·
+          Colab host: ${gpu.host.cpu}, ${gpu.host.cores} vCPU</p>`;
     } catch (err) {
-      el.innerHTML = `<p class="badge wrong">Could not load results</p><p class="small muted">${String(err)}</p>`;
+      el.innerHTML = `<p class="headline wrong">Could not load results</p><p class="muted small">${String(err)}</p>`;
     }
   }
   window.renderResults = render;

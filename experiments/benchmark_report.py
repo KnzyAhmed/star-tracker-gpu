@@ -11,12 +11,20 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+import sys
+
 SRC, OUT = Path("results/benchmark"), Path("docs/results/day6")
 SURFACE, INK, INK2, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
 BLUE, ORANGE, AQUA, YELLOW, MAGENTA = "#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4"
+DARK = "--theme" in sys.argv and "dark" in sys.argv          # python -m experiments.benchmark_report --theme dark
+if DARK:                                                      # website theme: transparent figure, light ink
+    OUT = OUT / "dark"
+    SURFACE, INK, INK2, GRID = "#0b0e24", "#eef0ff", "#b8bce0", "#2a2f58"
+    BLUE, ORANGE, AQUA, YELLOW = "#9db4ff", "#ff9a6e", "#5fe3c0", "#f3c969"
+SAVE = {"transparent": True} if DARK else {}
 plt.rcParams.update({"figure.facecolor": SURFACE, "axes.facecolor": SURFACE, "axes.edgecolor": GRID,
                      "axes.labelcolor": INK2, "xtick.color": INK2, "ytick.color": INK2, "text.color": INK,
-                     "axes.grid": True, "grid.color": GRID, "axes.axisbelow": True,
+                     "axes.grid": True, "grid.color": GRID, "axes.axisbelow": True, "legend.labelcolor": INK,
                      "axes.spines.top": False, "axes.spines.right": False, "font.size": 10})
 
 
@@ -71,8 +79,9 @@ def main():
           f"The projection row assumes identify scales over the Mac's cores like the full CPU pipeline did "
           f"({thr[(1, True)] / mac_full_all:.1f}× on {n_mac} processes); it was not run as one system."]
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "benchmark.md").write_text("\n".join(L) + "\n")
-    print("\n".join(L))
+    if not DARK:
+        (OUT / "benchmark.md").write_text("\n".join(L) + "\n")
+        print("\n".join(L))
 
     # ---------------- figure: (a) render+detect per configuration, (b) where the GPU pipeline's time goes
     fig, ax = plt.subplots(1, 2, figsize=(12, 4.2), dpi=130, gridspec_kw={"width_ratios": [1.3, 1]})
@@ -98,7 +107,7 @@ def main():
     ax[1].legend(loc="upper center", bbox_to_anchor=(0.5, -0.25), ncol=2, frameon=False, fontsize=9)
     ax[1].grid(axis="y", visible=False)
     fig.tight_layout()
-    fig.savefig(OUT / "benchmark.png", bbox_inches="tight")
+    fig.savefig(OUT / "benchmark.png", bbox_inches="tight", **SAVE)
     print(f"saved {OUT}/benchmark.md, benchmark.png")
 
 

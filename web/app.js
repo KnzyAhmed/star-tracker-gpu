@@ -1,10 +1,33 @@
-// Live tracker page: sky globe, camera image with overlays, step-by-step results.
+// Live tracker page: sky globe, camera image with overlays, the solve as a timeline.
 // All the star-tracker computation happens in worker.js (the real Python code via Pyodide).
 "use strict";
 
 const D2R = Math.PI / 180, R2D = 180 / Math.PI, TAN10 = Math.tan(10 * D2R);
 const $ = (id) => document.getElementById(id);
 const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+// ---------------------------------------------------------------- background starfield (drawn once)
+(function drawSky() {
+  const c = $("stars"), ctx = c.getContext("2d");
+  const paint = () => {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    c.width = innerWidth * dpr; c.height = innerHeight * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, innerWidth, innerHeight);
+    let s = 20261015;                                               // fixed seed: the same sky every visit
+    const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+    const n = Math.round(innerWidth * innerHeight / 1800);
+    for (let i = 0; i < n; i++) {
+      const x = rnd() * innerWidth, y = rnd() * innerHeight, r = rnd();
+      const size = r < 0.92 ? 0.6 + rnd() * 0.6 : 1.2 + rnd() * 1.3;
+      const a = 0.25 + rnd() * 0.6;
+      ctx.fillStyle = r < 0.1 ? `rgba(179,157,255,${a})` : r < 0.2 ? `rgba(157,180,255,${a})` : `rgba(238,240,255,${a})`;
+      ctx.beginPath(); ctx.arc(x, y, size, 0, 2 * Math.PI); ctx.fill();
+    }
+  };
+  paint();
+  addEventListener("resize", paint);
+})();
 
 // ---------------------------------------------------------------- vector maths (mirrors tracker/camera.py)
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -59,11 +82,11 @@ worker.onmessage = (e) => {
     S.busy = false;
     setBusy(false);
     $("status").textContent = m.text;
-    $("answer").innerHTML = `<p class="badge wrong">Error</p><p class="small muted">${escapeHtml(m.text)}</p>`;
+    $("answer").innerHTML = `<p class="headline wrong">Error</p><p class="note">${escapeHtml(m.text)}</p>`;
   }
 };
 
-function setBusy(b) { $("solve").disabled = b; $("lost").textContent = b ? "Solving…" : "Lost in space (random)"; }
+function setBusy(b) { $("solve").disabled = b; $("lost").textContent = b ? "Solving…" : "Lost in space"; }
 function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
 function solve() {
@@ -73,6 +96,13 @@ function solve() {
   setBusy(true);
   S.seed += 1;                                   // fresh noise every solve
   worker.postMessage({ cmd: "solve", id: ++S.reqId, ra: S.ra, dec: S.dec, roll: S.roll, noise: S.noise, hot: S.hot, seed: S.seed });
+}
+
+function lostInSpace() {
+  if (S.busy) { S.pendingRandom = true; return; }      // queue it: never drop a click silently
+  S.busy = true;
+  setBusy(true);
+  worker.postMessage({ cmd: "random", id: ++S.reqId, seed: Math.floor(Math.random() * 1e9) });
 }
 
 // ---------------------------------------------------------------- inputs
@@ -85,12 +115,6 @@ for (const [k, dp] of FIELDS) {
   $(k).addEventListener("change", solve);
 }
 $("solve").addEventListener("click", solve);
-function lostInSpace() {
-  if (S.busy) { S.pendingRandom = true; return; }      // queue it: never drop a click silently
-  S.busy = true;
-  setBusy(true);
-  worker.postMessage({ cmd: "random", id: ++S.reqId, seed: Math.floor(Math.random() * 1e9) });
-}
 $("lost").addEventListener("click", lostInSpace);
 for (const id of ["showDots", "showNames", "showTruth"]) $(id).addEventListener("change", drawOverlay);
 
@@ -105,14 +129,17 @@ function project(axes, r, R, cx, cy) {
 
 function drawGlobe() {
   if (!S.sky) return;
-  const W = globe.width, cx = W / 2, cy = W / 2, R = W / 2 - 4;
+  const W = globe.width, cx = W / 2, cy = W / 2, R = W / 2 - 2;
   const axes = cameraAxes(S.ra, S.dec, S.roll);
   g.clearRect(0, 0, W, W);
   g.save();
-  g.beginPath(); g.arc(cx, cy, R, 0, 2 * Math.PI); g.fillStyle = "#05070c"; g.fill(); g.clip();
+  g.beginPath(); g.arc(cx, cy, R, 0, 2 * Math.PI);
+  const bg = g.createRadialGradient(cx * 0.8, cy * 0.75, R * 0.1, cx, cy, R);
+  bg.addColorStop(0, "#141a48"); bg.addColorStop(0.6, "#0a0d2c"); bg.addColorStop(1, "#05061a");
+  g.fillStyle = bg; g.fill(); g.clip();
 
   // RA / Dec grid
-  g.strokeStyle = "rgba(120,140,180,0.22)"; g.lineWidth = 1;
+  g.strokeStyle = "rgba(179,157,255,0.16)"; g.lineWidth = 1;
   const line = (pts) => { g.beginPath(); let pen = false;
     for (const r of pts) { const [x, y, z] = project(axes, r, R, cx, cy);
       if (z > 0) { pen ? g.lineTo(x, y) : g.moveTo(x, y); pen = true; } else pen = false; }
@@ -122,16 +149,20 @@ function drawGlobe() {
 
   // stars
   const sky = S.sky;
+  g.font = "500 12px Inter, system-ui";
   for (let i = 0; i < S.skyR.length; i++) {
     const [x, y, z] = project(axes, S.skyR[i], R, cx, cy);
     if (z <= 0 || Math.hypot(x - cx, y - cy) > R) continue;
-    const rad = Math.max(0.5, 3.4 - 0.55 * sky.mag[i]);
-    g.beginPath(); g.arc(x, y, rad, 0, 2 * Math.PI); g.fillStyle = "#e9eefc"; g.fill();
-    if (sky.name[i]) { g.fillStyle = css("--gold"); g.font = "11px system-ui"; g.fillText(sky.name[i], x + 5, y - 4); }
+    const rad = Math.max(0.6, 3.8 - 0.6 * sky.mag[i]);
+    if (rad > 2) { g.shadowColor = "rgba(238,240,255,0.9)"; g.shadowBlur = 8; } else g.shadowBlur = 0;
+    g.beginPath(); g.arc(x, y, rad, 0, 2 * Math.PI); g.fillStyle = "#eef0ff"; g.fill();
+    g.shadowBlur = 0;
+    if (sky.name[i]) { g.fillStyle = css("--gold"); g.fillText(sky.name[i], x + 6, y - 5); }
   }
 
   // camera field of view (the pinhole's square, seen on the sphere)
-  g.strokeStyle = css("--accent"); g.lineWidth = 2;
+  g.strokeStyle = css("--accent"); g.lineWidth = 1.5;
+  g.shadowColor = "rgba(157,180,255,0.9)"; g.shadowBlur = 10;
   g.beginPath();
   const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]];
   for (let k = 0; k < 4; k++) for (let t = 0; t <= 1.0001; t += 0.1) {
@@ -142,9 +173,13 @@ function drawGlobe() {
     (k === 0 && t === 0) ? g.moveTo(x, y) : g.lineTo(x, y);
   }
   g.stroke();
+  g.shadowBlur = 0;
+  // boresight cross
+  g.strokeStyle = "rgba(157,180,255,0.6)"; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(cx - 8, cy); g.lineTo(cx + 8, cy); g.moveTo(cx, cy - 8); g.lineTo(cx, cy + 8); g.stroke();
   g.restore();
-  g.fillStyle = css("--ink-2"); g.font = "12px system-ui";
-  g.fillText(`north ↑ at roll 0 · east ←`, 10, W - 10);
+  g.fillStyle = css("--muted"); g.font = "500 10px Inter, system-ui";
+  g.fillText("NORTH ↑ AT ROLL 0 · EAST ←", 22, W - 22);
 }
 
 // drag: move the boresight opposite to the drag, in the camera's own axes (works at any roll, at the poles)
@@ -153,7 +188,7 @@ globe.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clien
 globe.addEventListener("pointermove", (e) => {
   if (!drag) return;
   const scale = globe.width / globe.getBoundingClientRect().width;
-  const R = globe.width / 2 - 4;
+  const R = globe.width / 2 - 2;
   const dx = (e.clientX - drag.x) * scale / (R * ZOOM), dy = (e.clientY - drag.y) * scale / (R * ZOOM);
   drag = { x: e.clientX, y: e.clientY };
   const [x, y, z] = cameraAxes(S.ra, S.dec, S.roll);
@@ -183,53 +218,56 @@ function drawOverlay() {
     for (const s of out.stars) { ov.beginPath(); ov.moveTo(s.u, s.v - 9); ov.lineTo(s.u + 9, s.v); ov.lineTo(s.u, s.v + 9); ov.lineTo(s.u - 9, s.v); ov.closePath(); ov.stroke(); }
   }
   if ($("showDots").checked) {
-    ov.lineWidth = 3;
+    ov.lineWidth = 2.5;
     for (const d of out.dots) {
       ov.strokeStyle = d.verified ? css("--accent") : css("--warn");
       ov.beginPath(); ov.arc(d.u, d.v, 15, 0, 2 * Math.PI); ov.stroke();
     }
   }
   if ($("showNames").checked) {
-    ov.font = "600 22px system-ui"; ov.fillStyle = css("--gold");
-    ov.shadowColor = "rgba(0,0,0,0.9)"; ov.shadowBlur = 4;
+    ov.font = "500 21px Inter, system-ui"; ov.fillStyle = css("--gold");
+    ov.shadowColor = "rgba(0,0,0,0.95)"; ov.shadowBlur = 5;
     for (const d of out.dots) if (d.verified && d.name && d.mag !== null && d.mag < 3.2) ov.fillText(d.name, d.u + 18, d.v - 14);
     ov.shadowBlur = 0;
   }
 }
 
-// ---------------------------------------------------------------- steps + answer
+// ---------------------------------------------------------------- timeline + answer
 function fmt(x, dp = 2) { return x === null || x === undefined ? "–" : Number(x).toFixed(dp); }
 function angDiff(a, b) { return ((a - b + 540) % 360) - 180; }
 
 function showSteps(out) {
   const t = out.timing_ms, total = t.prepare + t.render + t.detect + t.identify;
+  const solved = out.outcome !== "no solution";
   const steps = [
     ["Render", t.render, `${out.n_in_view} catalog stars drawn as blurred dots on 1,048,576 pixels, plus noise${S.hot ? ` and ${S.hot} fake stars` : ""}.`],
     ["Detect", t.detect, `${out.n_detected} dots found: 5σ above the background and brightest in their 3×3 neighbourhood; centres to ~0.1 px.`],
     ["Identify", t.identify, `${out.n_pairs.toLocaleString()} dot pairs voted against ${S.info.pairs.toLocaleString()} catalog pairs (±${S.info.eps_arcsec}″); ` +
       `names cross-checked, attitude solved by SVD, ${out.n_verified} dots verified.`],
+    [solved ? "Solved" : "No solution", total, solved
+      ? `${fmt(total, 0)} ms in your browser (Python as WebAssembly). Native Python on one laptop core: ~14 ms; the Tesla T4 renders + detects a frame in 0.32 ms.`
+      : `Fewer than 4 dots could be verified, so the tracker says it doesn't know instead of guessing.`],
   ];
   $("steps").innerHTML = steps.map(([n, ms, what], i) =>
-    `<li><span class="name">${i + 1}. ${n}</span><span class="ms">${fmt(ms, 1)} ms</span><span class="what">${what}</span></li>`).join("") +
-    `<li><span class="name">Total in your browser</span><span class="ms">${fmt(total, 0)} ms</span>` +
-    `<span class="what">The project's Python, compiled to WebAssembly, on your CPU. Native Python on one Apple M1 Pro core takes ~14 ms per frame; ` +
-    `the Tesla T4 renders + detects one in 0.32 ms.</span></li>`;
+    `<li class="${i < 3 || solved ? "done" : ""}"><span class="name">${n}</span><span class="ms">${fmt(ms, i === 3 ? 0 : 1)} ms</span><span class="what">${what}</span></li>`).join("");
 
-  if (out.outcome === "no solution") {
-    $("answer").innerHTML = `<p class="badge none">No solution</p>
-      <p class="small">Fewer than 4 dots could be verified, so the tracker says it doesn't know instead of guessing.
-      A spacecraft would keep using its gyros and try the next frame. Try less noise or fewer fake stars.</p>`;
+  const v = $("verdict");
+  v.hidden = false;
+  v.className = "verdict " + (out.outcome === "correct" ? "correct" : out.outcome === "wrong" ? "wrong" : "none");
+  v.textContent = out.outcome === "correct" ? "✓ solved" : out.outcome === "wrong" ? "✗ wrong" : "no solution";
+
+  if (!solved) {
+    $("answer").innerHTML = `<p class="headline none">No solution<small>the honest answer</small></p>
+      <p class="note">A spacecraft would keep using its gyros and try the next frame. Try less noise or fewer fake stars.</p>`;
     return;
   }
   const e = out.estimate, tr = out.truth, er = out.error_arcsec;
-  const cls = out.outcome === "correct" ? "correct" : "wrong";
-  $("answer").innerHTML = `<p class="badge ${cls}">${out.outcome === "correct" ? "✓ Solved" : "✗ Wrong"}</p>
+  $("answer").innerHTML = `<p class="headline ${out.outcome === "correct" ? "" : "wrong"}">${fmt(er.pointing, 1)}″<small>pointing error · 1 pixel ≈ 71″</small></p>
     <table class="cmp"><tr><th></th><th>truth</th><th>tracker</th><th>difference</th></tr>
-      <tr><td>RA</td><td>${fmt(tr.ra, 4)}°</td><td>${fmt(e.ra, 4)}°</td><td>${fmt(angDiff(e.ra, tr.ra) * 3600 * Math.cos(tr.dec * D2R), 1)}″</td></tr>
-      <tr><td>Dec</td><td>${fmt(tr.dec, 4)}°</td><td>${fmt(e.dec, 4)}°</td><td>${fmt((e.dec - tr.dec) * 3600, 1)}″</td></tr>
+      <tr><td>Right ascension</td><td>${fmt(tr.ra, 4)}°</td><td>${fmt(e.ra, 4)}°</td><td>${fmt(angDiff(e.ra, tr.ra) * 3600 * Math.cos(tr.dec * D2R), 1)}″</td></tr>
+      <tr><td>Declination</td><td>${fmt(tr.dec, 4)}°</td><td>${fmt(e.dec, 4)}°</td><td>${fmt((e.dec - tr.dec) * 3600, 1)}″</td></tr>
       <tr><td>Roll</td><td>${fmt(tr.roll, 3)}°</td><td>${fmt(e.roll, 3)}°</td><td>${fmt(angDiff(e.roll, tr.roll) * 3600, 1)}″</td></tr></table>
-    <p class="big-err">${fmt(er.pointing, 1)}″ <span>pointing error (1 pixel ≈ 71″)</span></p>
-    <p class="small muted">Roll error ${fmt(er.roll, 1)}″. Roll is weaker because all stars sit within 14° of the boresight.</p>`;
+    <p class="note">Roll error ${fmt(er.roll, 1)}″. Roll is the weaker axis because every star sits within 14° of the boresight, so a twist moves them very little.</p>`;
 }
 
 // ---------------------------------------------------------------- tabs
@@ -238,5 +276,6 @@ for (const b of document.querySelectorAll(".tabs button")) {
     for (const o of document.querySelectorAll(".tabs button")) o.setAttribute("aria-selected", String(o === b));
     for (const s of document.querySelectorAll(".tab")) s.hidden = s.id !== "tab-" + b.dataset.tab;
     if (b.dataset.tab === "results" && window.renderResults) window.renderResults();
+    window.scrollTo({ top: 0 });
   });
 }

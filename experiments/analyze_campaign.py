@@ -28,11 +28,32 @@ SURFACE, INK, INK2, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
 BLUE, ORANGE, RED = "#2a78d6", "#eb6834", "#d03b3b"
 SEQ = matplotlib.colors.LinearSegmentedColormap.from_list("blue", ["#cde2fb", "#6da7ec", "#256abf", "#0d366b"])
 C = {name: k for k, name in enumerate(COLUMNS)}
+SAVE = {}                       # extra savefig kwargs (dark theme: transparent background)
 
-plt.rcParams.update({"figure.facecolor": SURFACE, "axes.facecolor": SURFACE, "axes.edgecolor": GRID,
-                     "axes.labelcolor": INK2, "xtick.color": INK2, "ytick.color": INK2, "text.color": INK,
-                     "axes.grid": True, "grid.color": GRID, "grid.linewidth": 0.8, "axes.axisbelow": True,
-                     "axes.spines.top": False, "axes.spines.right": False, "font.size": 10})
+THEMES = {  # the website's dark "lost in space" theme: same series hues stepped for a dark surface
+    "light": dict(SURFACE="#fcfcfb", INK="#0b0b0b", INK2="#52514e", GRID="#e4e3df",
+                  BLUE="#2a78d6", ORANGE="#eb6834", RED="#d03b3b",
+                  seq=["#cde2fb", "#6da7ec", "#256abf", "#0d366b"], transparent=False),
+    "dark": dict(SURFACE="#0b0e24", INK="#eef0ff", INK2="#b8bce0", GRID="#2a2f58",
+                 BLUE="#9db4ff", ORANGE="#ff9a6e", RED="#ff6b6b",
+                 seq=["#241a4d", "#5a3bb5", "#9b7bff", "#e6dcff"], transparent=True),
+}
+
+
+def set_theme(name):
+    t = THEMES[name]
+    globals().update({k: v for k, v in t.items() if k.isupper()})
+    globals()["SEQ"] = matplotlib.colors.LinearSegmentedColormap.from_list(name, t["seq"])
+    SAVE.clear()
+    SAVE.update({"transparent": True} if t["transparent"] else {})
+    plt.rcParams.update({"figure.facecolor": SURFACE, "axes.facecolor": SURFACE, "axes.edgecolor": GRID,
+                         "axes.labelcolor": INK2, "xtick.color": INK2, "ytick.color": INK2, "text.color": INK,
+                         "axes.grid": True, "grid.color": GRID, "grid.linewidth": 0.8, "axes.axisbelow": True,
+                         "axes.spines.top": False, "axes.spines.right": False, "font.size": 10,
+                         "legend.labelcolor": INK, "savefig.facecolor": SURFACE})
+
+
+set_theme("light")
 
 
 def load(d, name):
@@ -73,9 +94,11 @@ def errorbar_rates(ax, x, t, color, label=None):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--dir", default="results/campaign")
+    p.add_argument("--theme", choices=THEMES, default="light", help="dark: transparent figures for the website")
     a = p.parse_args()
+    set_theme(a.theme)
     d = Path(a.dir)
-    out = d / "analysis"
+    out = d / ("analysis" if a.theme == "light" else "analysis_dark")
     out.mkdir(exist_ok=True)
     meta = json.loads((d / "meta.json").read_text()) if (d / "meta.json").exists() else {}
 
@@ -129,7 +152,7 @@ def main():
         ax[1].plot(t["group"], det, color=BLUE, lw=2, marker="o", ms=7, mec=SURFACE, mew=1.5)
         ax[1].set(xlabel=unit, ylabel="dots detected per frame (mean)", title=f"Detections vs {unit}")
         fig.tight_layout()
-        fig.savefig(out / f"{key}_sweep.png")
+        fig.savefig(out / f"{key}_sweep.png", **SAVE)
         plt.close(fig)
 
     # ---------------- success vs stars in view (baseline + the hardest noise level that has failures)
@@ -154,7 +177,7 @@ def main():
     ax[1].hist(base[:, C["n_in_view"]], bins=np.arange(0, base[:, C["n_in_view"]].max() + 2), color=BLUE, rwidth=0.85)
     ax[1].set(xlabel="catalog stars in view", ylabel="baseline trials", title="How many stars a random pointing sees")
     fig.tight_layout()
-    fig.savefig(out / "success_vs_stars.png")
+    fig.savefig(out / "success_vs_stars.png", **SAVE)
     plt.close(fig)
 
     # ---------------- failure sky map (Mollweide; RA increases to the left, like the sky seen from inside)
@@ -182,7 +205,7 @@ def main():
                 color=INK, zorder=10, path_effects=halo)
     ax.set_xlabel("right ascension (increases to the left)")
     ax.set_title("Where the tracker fails: boresight of every non-correct trial over star density (RA, Dec)")
-    fig.savefig(out / "failure_map.png", bbox_inches="tight")
+    fig.savefig(out / "failure_map.png", bbox_inches="tight", **SAVE)
     plt.close(fig)
     S["failures"] = {"ra": fails[:, C["ra"]].round(2).tolist(), "dec": fails[:, C["dec"]].round(2).tolist(),
                      "read_noise": fails[:, C["read_noise"]].tolist(), "hot_pixels": fails[:, C["hot_pixels"]].tolist(),
@@ -200,13 +223,14 @@ def main():
                           fontsize=8, color=INK2)
         axis.set(xlabel="error (arcsec)", ylabel="correct baseline trials", title=f"{name} error, n={len(x):,}")
     fig.tight_layout()
-    fig.savefig(out / "accuracy_hist.png")
+    fig.savefig(out / "accuracy_hist.png", **SAVE)
     plt.close(fig)
 
     report = "\n".join(L)
     print(report)
-    (out / "report.txt").write_text(report + "\n")
-    (out / "summary.json").write_text(json.dumps(S, indent=1))
+    if a.theme == "light":                    # the numbers are theme-independent: write them once
+        (out / "report.txt").write_text(report + "\n")
+        (out / "summary.json").write_text(json.dumps(S, indent=1))
     print(f"\nsaved {out}/report.txt, summary.json, read_noise_sweep.png, hot_pixels_sweep.png, "
           f"success_vs_stars.png, failure_map.png, accuracy_hist.png")
 

@@ -369,3 +369,17 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   runner but failed at configure-pages (Pages not yet enabled) as expected. A README badge commit (fa65902) re-triggered it: tests ✓, publish ✓.
 - Live check in Chrome: first load ~35 s (Pyodide + NumPy + SciPy from the CDN), Orion solved 1.5″ (280 ms); a globe drag to Lepus
   (RA 74.5°, Dec −17.9°, 29 stars) solved 1.4″ in 135 ms. All bundle files return HTTP 200.
+
+### Website redesign (2026-10-15, owner's brief + 8 inspiration images)
+- **Brief.** Globe and camera image as the main focus; the step-by-step must not take horizontal space; "lost in space" mood,
+  deep blues → purples → violets. Inspiration: full-bleed dark skies, no card boxes, thin lines, small wide-tracked uppercase labels,
+  a large light serif title, numbered sections (Space Advisor, NASA Eyes, SpaceX concepts, a Webb nebula).
+- **Built.** New `web/style.css` (tokens: #060816 → #0b1030 → #1b1f5e → #4b2a8a → #7c4dff/#b39dff; Cormorant Garamond display +
+  Inter UI), drawn starfield canvas + faint SVG orbit arcs behind the page, nebula gradients; two equal 1:1 visuals side by side
+  (globe 640 px canvas with glow and boresight cross); the solve as a 4-node horizontal timeline under them (vertical on phones);
+  verdict badge on the image; thin sliders and outlined buttons; results tiles as a ruled strip; numbered "How it works".
+- **Dark charts.** `analyze_campaign.py --theme dark` and `benchmark_report.py --theme dark` render transparent PNGs with light ink
+  and the dark-stepped palette into `docs/results/day5/dark/` and `day6/dark/`; the site uses those, the README keeps the light ones.
+- **Checked in Chrome.** Desktop 1300 px: all three tabs. Phone 390 px: an overflow to 399 px was traced (JS: elements with right > 390)
+  to the nowrap comparison table in the solve section stretching the one-column grid → `min-width: 0`, scrollable `.answer`,
+  first column may wrap. Now exactly 390 px wide.
