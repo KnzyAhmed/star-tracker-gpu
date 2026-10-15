@@ -654,3 +654,32 @@ On Colab the "everything else" (identify) runs on 2 slow vCPUs at 2.5 ms/frame. 
 Answer: 37× is against one CPU core. The fair comparison (all cores) is 5.7×, and the end-to-end gain is capped by Amdahl's law: identification
 stayed on the CPU, and on the 2-vCPU GPU host it became 84 % of the time. Next steps: run identify on more cores (or on the GPU), and overlap it
 with the GPU's next batch (pipelining), so the CPU and GPU work at the same time instead of taking turns.
+
+---
+
+## Day 7: the live demo website
+
+### How the real Python tracker runs in a web page (`web/`, `tools/build_site.py`)
+
+**What it does.** The page runs the project's actual `tracker/*.py` modules, not a JavaScript re-write, inside the visitor's browser. Pyodide is
+CPython compiled to WebAssembly, and it ships NumPy and SciPy. A Web Worker (a background thread) loads Pyodide, fetches the tracker files and the
+catalog listed in `manifest.json` into Pyodide's virtual file system, and calls `web/bridge.py`. The page itself only draws.
+
+**IN / OUT** (`bridge.run_frame(ra, dec, roll, read_noise, hot_pixels, seed)`). IN: the hidden true pointing (degrees) and the conditions.
+OUT: the image as 1,048,576 bytes (asinh-stretched grey levels), every detected dot (u, v, flux, votes, verified, name), the true star positions,
+per-stage times, the estimate, the errors and the outcome. The tracker itself only ever sees the image.
+
+**Worked example (measured in Chrome on the M1 Pro).** Orion: render 207 ms, detect 46 ms, identify 83 ms → 343 ms total, against ~14 ms for the
+same code natively. WebAssembly NumPy is ~25× slower here, and still interactive. A sparse field (20 dots) took 132 ms.
+
+**Why this way.**
+- *Same code, not a port.* A JavaScript re-implementation could drift from the tested Python. Here the demo can't disagree with the tests.
+  `test_build_site` even runs the bundle in a clean Python process to prove it is self-contained.
+- *Web Worker.* The ~0.3 s computation runs off the main thread, so dragging the globe never freezes.
+- *Globe maths mirrors `attitude_from_pointing`.* So the 20° box on the globe and the camera image show the same sky the same way round.
+  Dragging moves the boresight along the camera's own x/y axes, which works at any roll and over the poles.
+- *No GPU on the page.* Browsers can't run our CUDA kernels; the Results tab shows the stored T4 numbers and says so.
+
+**Interview question.** *"Your demo runs in the browser. How do you know it does the same thing as your tested code?"*
+Answer: it *is* the tested code. The build script copies the same `tracker/*.py` files into the site, and Pyodide runs them unchanged. A test builds the
+bundle and runs it in an isolated Python process, and the page's Python entry point (`bridge.py`) has its own unit tests.

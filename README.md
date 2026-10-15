@@ -4,6 +4,9 @@ A star tracker takes a photo of the stars and works out which way a spacecraft i
 guess** ("lost in space"). This project builds one from scratch in Python and validates it with a Monte Carlo campaign
 over 220,000 simulated skies. The image-heavy stages run as hand-written CUDA kernels on a GPU.
 
+**▶ [Try it live in your browser](https://knzyahmed.github.io/star-tracker-gpu/)**: point the camera anywhere on the sky (or press "lost in space")
+and watch the real tracker code, running in WebAssembly, render, detect, identify and solve.
+
 | | |
 |---|---|
 | **100,000 / 100,000** random skies solved | ≥ 99.996 % success at 95 % confidence, normal noise |

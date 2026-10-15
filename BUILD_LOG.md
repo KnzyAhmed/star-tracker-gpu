@@ -340,3 +340,26 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   10-core Mac (2.00) beats the T4 + 2-vCPU host (3.03) by 1.5×: identify is 84 % of the GPU host's time (Amdahl). Projection with identify
   on the Mac's 10 cores: 0.67 ms/frame (not run as one system; labelled as a projection).
 - Artefacts: `docs/results/day6/{benchmark.md, benchmark.png, cpu_m1pro.json, gpu_colab_t4.json}`; README updated.
+
+## 2026-10-15: Day 7, public demo website
+
+### Publishing prep (owner's request): history rewritten
+- Backup: `~/star-tracker-gpu-backup/before-rewrite-2026-10-15.bundle` (verified) + a copy of the private project notes file.
+- `git filter-branch` over all 36 commits: dropped the private notes file, replaced its two mentions with "project plan", fixed one commit
+  message; force-pushed with `--force-with-lease` against the known old head (a369630 → 0a9aacf). Verified 0 matches in every commit's files and messages.
+  The notes file stays local, excluded via `.git/info/exclude` (not `.gitignore`, which is public).
+
+### Website (`web/`, `tools/build_site.py`, `.github/workflows/pages.yml`)
+- **Built.** `web/bridge.py` (Python entry points: setup, run_frame, random_pointing, sky_stars; 6 tests), `tools/build_site.py`
+  (→ `_site/`: pages + tracker code minus gpu.py/fetch_catalog.py + catalog + stored results + manifest; 2 tests, one runs the bundle in an isolated
+  interpreter), `web/worker.js` (Pyodide 0.27.7 pinned: NumPy 2.0.2, SciPy 1.14.1), `web/app.js` (globe, image + overlays, steps),
+  `web/results.js` (stored results; every number read from JSON), `web/index.html`, `web/style.css`, Pages workflow (tests → build → deploy).
+- **Deviation.** Folder `web/` instead of the planned `site/`: `site` is a standard-library module name and would shadow it on `sys.path`.
+- **Measured in Chrome (M1 Pro).** Orion solved, 1.5″ pointing; render 207, detect 46, identify 83 ms (343 ms total). Random sparse field: 20 dots,
+  solved, 0.5″, 132 ms. Results tab: tiles and tables match `docs/results/day5/report.txt`.
+- **Problems found while testing in the browser.** (1) `display: grid` overrode the `hidden` attribute, so the layout showed while loading →
+  `[hidden] { display: none !important }`. (2) Slider labels wrapped. (3) My "native is ~3× faster" text was wrong (it's ~25×) → state the measured
+  native time instead. (4) "Lost in space" clicked during a solve was silently dropped → now queued. (5) Blank white blocks under shorter figures →
+  `align-items: start`. (6) "220,000" was typed into results.js → now derived from the JSON. (7) The no-solution test assumed noise 200 hides Orion;
+  it doesn't (its bright stars survive), so it uses 2000.
+- Suite (Mac): **127 passed**.

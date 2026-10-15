@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lost-in-Space Star Tracker</title>
+<meta name="description" content="A star tracker that finds which way a camera points from a photo of the stars, running live in your browser, validated on 220,000 simulated skies.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <h1>Lost-in-Space Star Tracker</h1>
+    <p class="sub">Photo of the stars in, spacecraft orientation out, with no prior guess.</p>
+  </div>
+  <nav class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-tab="live">Live tracker</button>
+    <button role="tab" aria-selected="false" data-tab="results">Results</button>
+    <button role="tab" aria-selected="false" data-tab="how">How it works</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ======================= LIVE ======================= -->
+  <section id="tab-live" class="tab" role="tabpanel">
+    <div id="loading" class="loading">
+      <div class="spinner" aria-hidden="true"></div>
+      <p id="status">Starting…</p>
+      <p class="muted">The real Python tracker is loading into your browser (about 20 MB, once).</p>
+    </div>
+
+    <div id="live" class="live" hidden>
+      <div class="panel globe-panel">
+        <h2>1 · Point the camera</h2>
+        <p class="muted small">Drag the sky. The box is the camera's 20° field of view. The tracker is <b>not</b> told where it points.</p>
+        <canvas id="globe" width="440" height="440" aria-label="Sky globe with camera field of view"></canvas>
+        <div class="controls">
+          <label><span>RA</span><span><output id="raOut"></output>°</span><input id="ra" type="range" min="0" max="359.9" step="0.1"></label>
+          <label><span>Dec</span><span><output id="decOut"></output>°</span><input id="dec" type="range" min="-90" max="90" step="0.1"></label>
+          <label><span>Roll</span><span><output id="rollOut"></output>°</span><input id="roll" type="range" min="-180" max="180" step="1"></label>
+          <label><span>Read noise</span><span><output id="noiseOut"></output></span><input id="noise" type="range" min="1" max="30" step="0.5"></label>
+          <label><span>Fake stars (hot pixels)</span><span><output id="hotOut"></output></span><input id="hot" type="range" min="0" max="100" step="1"></label>
+        </div>
+        <div class="buttons">
+          <button id="lost" class="primary">Lost in space (random)</button>
+          <button id="solve">Solve this view</button>
+        </div>
+      </div>
+
+      <div class="panel image-panel">
+        <h2>2 · What the camera sees, and what the tracker found</h2>
+        <div class="toggles">
+          <label><input type="checkbox" id="showDots" checked> detected dots</label>
+          <label><input type="checkbox" id="showNames" checked> star names</label>
+          <label><input type="checkbox" id="showTruth"> true catalog positions</label>
+        </div>
+        <div class="imgwrap">
+          <canvas id="image" width="1024" height="1024" aria-label="Simulated camera image"></canvas>
+          <canvas id="overlay" width="1024" height="1024" aria-hidden="true"></canvas>
+        </div>
+        <p class="legend small"><span class="key verified"></span> verified against the catalog
+          <span class="key unverified"></span> detected, not verified <span class="key truth"></span> truth</p>
+      </div>
+
+      <div class="panel steps-panel">
+        <h2>3 · Step by step</h2>
+        <ol id="steps" class="steps"></ol>
+        <div id="answer" class="answer"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================= RESULTS ======================= -->
+  <section id="tab-results" class="tab" role="tabpanel" hidden>
+    <div id="results"><p class="muted">Loading stored results…</p></div>
+  </section>
+
+  <!-- ======================= HOW ======================= -->
+  <section id="tab-how" class="tab" role="tabpanel" hidden>
+    <div class="prose">
+      <h2>How it works</h2>
+      <ol class="how">
+        <li><b>Render.</b> Each catalog star in the 20° field becomes a small Gaussian blob on a 1024×1024 sensor, plus background and read noise.</li>
+        <li><b>Detect.</b> Pixels 5σ above the background that are the brightest in their 3×3 neighbourhood are stars; a 5×5 brightness-weighted mean
+          finds each centre to about 0.1 pixel (7 arcseconds).</li>
+        <li><b>Vote.</b> The angle between two stars doesn't depend on where the camera points. For every pair of dots, the tracker looks up all
+          catalog pairs with nearly the same angle (266,153 pairs, sorted, binary search) and votes for their stars. The right star collects a vote
+          from almost every pair it is in; wrong ones only collect coincidences.</li>
+        <li><b>Check.</b> Names that disagree with the others (fake stars, unlucky votes) are dropped.</li>
+        <li><b>Solve.</b> Wahba's problem by SVD gives the rotation that best maps catalog directions onto camera directions.</li>
+        <li><b>Verify.</b> With that attitude, at least 4 dots must land within 25″ of catalog stars, or the answer is "no solution". It never guesses.</li>
+      </ol>
+      <p>The live tab runs the project's actual Python code (<code>tracker/</code>) in your browser through
+        <a href="https://pyodide.org">Pyodide</a>. The large validation campaign and the GPU benchmark ran on an NVIDIA Tesla T4 with
+        hand-written CUDA kernels; a web page cannot use a GPU that way, so those numbers are stored results (Results tab).</p>
+      <p><a id="repoLink" href="https://github.com/KnzyAhmed/star-tracker-gpu">Source code, tests and write-up on GitHub</a></p>
+    </div>
+  </section>
+</main>
+<footer class="foot muted small">Yale Bright Star Catalog · simulated 1024×1024 camera, 20° field · runs entirely in your browser</footer>
+<script src="results.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
