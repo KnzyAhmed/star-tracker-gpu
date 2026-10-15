@@ -363,3 +363,9 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   `align-items: start`. (6) "220,000" was typed into results.js → now derived from the JSON. (7) The no-solution test assumed noise 200 hides Orion;
   it doesn't (its bright stars survive), so it uses 2000.
 - Suite (Mac): **127 passed**.
+
+### Deployed (2026-10-15): https://knzyahmed.github.io/star-tracker-gpu/
+- Owner made the repo public and set Pages → Source: GitHub Actions. The first run (238c79c, before that) passed the tests on GitHub's Ubuntu
+  runner but failed at configure-pages (Pages not yet enabled) as expected. A README badge commit (fa65902) re-triggered it: tests ✓, publish ✓.
+- Live check in Chrome: first load ~35 s (Pyodide + NumPy + SciPy from the CDN), Orion solved 1.5″ (280 ms); a globe drag to Lepus
+  (RA 74.5°, Dec −17.9°, 29 stars) solved 1.4″ in 135 ms. All bundle files return HTTP 200.
