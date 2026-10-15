@@ -105,3 +105,13 @@ def test_orion_noisy_median_centroid_error():
     matched = dist < 1.5
     assert matched.sum() >= 0.8 * len(idx)
     assert np.median(dist[matched]) < 0.15
+
+
+def test_threshold_comparison_is_float32_whatever_the_input_type():
+    """Same answer for Python-float and np.float64 inputs (the GPU compares in float32 too)."""
+    rn = 5.13
+    t32 = np.float32(BACKGROUND + 5 * rn)
+    img = flat()
+    img[300, 300] = t32                                              # equal to float32 threshold
+    assert len(detect(img, BACKGROUND, rn)[0]) == 0
+    assert len(detect(img, np.float64(BACKGROUND), np.float64(rn))[0]) == 0

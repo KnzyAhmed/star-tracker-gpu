@@ -50,3 +50,38 @@ def render_batch(batch, seed=0, frame_ids=None, background=BACKGROUND, read_nois
          np.float32(1.0 / (2.0 * sigma_psf**2)), np.uint32(seed), np.int32(n_pix),
          out))
     return out
+
+
+DETECT_CAPACITY = 256            # detection slots per frame (spec said 64; real frames reach 83+)
+
+
+def detect_batch(images, background, read_noise, k_sigma=5, capacity=DETECT_CAPACITY):
+    """(F, n_pix, n_pix) CuPy images -> list of F (u, v, flux) NumPy float64 tuples, brightest
+    first: the same contract as detect_cpu.detect. Only the star lists leave the GPU.
+
+    Raises RuntimeError if a frame has more than `capacity` detections: which ones would be
+    kept depends on thread timing, so dropping them silently would make results irreproducible.
+    """
+    F, H, W = images.shape
+    if H != W or H % BLOCK:
+        raise ValueError(f"images must be square, a multiple of {BLOCK} px")
+    images = cp.ascontiguousarray(images, dtype=cp.float32)
+    threshold = np.float32(background + k_sigma * read_noise)      # same value as detect_cpu
+    count = cp.zeros(F, dtype=cp.int32)
+    out = cp.empty((F, capacity, 5), dtype=cp.float32)
+    _kernel("detect.cu", "detect_kernel")(
+        (H // BLOCK, H // BLOCK, F), (BLOCK, BLOCK),
+        (images, np.float32(background), threshold, np.int32(H), np.int32(capacity), count, out))
+    count = cp.asnumpy(count)
+    if (count > capacity).any():
+        bad = np.flatnonzero(count > capacity)
+        raise RuntimeError(f"detection capacity {capacity} exceeded in frames {bad[:10].tolist()} "
+                           f"(max {count.max()}); raise capacity")
+    out = cp.asnumpy(out)                                           # (F, capacity, 5), small
+    found = []
+    for f in range(F):
+        d = out[f, :count[f]].astype(np.float64)
+        u, v, flux = d[:, 0] + d[:, 2], d[:, 1] + d[:, 3], d[:, 4]
+        order = np.lexsort((u, v, -flux))       # brightest first; ties broken by position, so stable
+        found.append((u[order], v[order], flux[order]))
+    return found

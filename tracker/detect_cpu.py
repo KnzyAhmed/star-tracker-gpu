@@ -34,7 +34,9 @@ def detect(image, background, read_noise, k_sigma=5):
     """
     image = np.asarray(image)
     H, W = image.shape
-    threshold = background + k_sigma * read_noise
+    # Compare in float32, explicitly. (NumPy 2 already does this for a Python-float threshold,
+    # but an np.float64 one would silently switch to float64.) The GPU uses this same value.
+    threshold = np.float32(background + k_sigma * read_noise)
 
     # 1a. threshold: one pass over the whole image, leaves a few hundred pixels at most
     vv, uu = np.nonzero(image > threshold)
