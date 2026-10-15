@@ -571,3 +571,31 @@ Edge case found: `(−1e−17) % 360` returns exactly 360.0 in floating point, s
 **Interview question.** *"Why store RA/Dec/roll instead of the 3×3 matrix or a quaternion?"*
 Answer: for analysis. RA/Dec go straight onto a sky map, and roll is a physical angle you can bin. For computation the matrix (or a quaternion)
 is better: no singularities, and composing rotations is just multiplication. RA/Dec/roll are Euler-like angles, which become ill-defined at the poles.
+
+---
+
+### `tracker/campaign.py`: `run_batch`, `run_condition`, and `experiments/campaign.py`
+
+**What it does.** It runs thousands of trials under one *condition* (noise level, number of hot pixels) and writes one CSV row per trial:
+`trial, read_noise, hot_pixels, ra, dec, roll, n_in_view, n_detected, outcome, total, pointing, roll_err, n_matched`.
+`run_condition` appends a batch at a time and skips trials already in the file, so an interrupted Colab run just resumes.
+
+**IN / OUT.** `run_batch(trials, seed, read_noise, hot_pixels, catalog, table, backend)` → (len(trials), 13) float64.
+Errors are in arcsec (NaN for "no solution"); outcome 0/1/2 = correct/wrong/no solution.
+
+**Key idea 1: a trial is a pure function of (seed, trial number).** Attitude from `default_rng([seed, trial, 0])`, hot pixels from
+`default_rng([seed, trial, 1])`, noise from the counter-based hash of (seed, trial). Worked example: trial 4 run alone gives the *same row* as
+trial 4 run as the second item of the batch [3, 4]. The test checks exactly that. With a single shared generator, trial 4's sky would depend on
+how many random numbers trial 3 used, so resuming or reordering would silently change results.
+
+**Key idea 2: common random numbers.** Every condition uses the same seed, so trial k is the same sky at noise 5 and at noise 20. Comparing
+the conditions then measures the *effect of noise*, not luck in which skies were drawn. That is why `noise_5` is not run separately: it's the first
+10,000 baseline trials.
+
+**The plan** (`experiments/campaign.py`, seed 2026): baseline 100,000 trials; noise sweep 2.5–20 (7 levels × 10,000); hot pixels 5–80
+(5 levels × 10,000). Total 220,000 frames.
+
+**Interview question.** *"Your noise sweep shows 98 % at noise 15 and 97 % at noise 17.5, but the error bars overlap. Can you claim noise 17.5 is worse?"*
+Answer: with independent samples, not on that comparison alone. Here the skies are *paired* (common random numbers): I can count the trials that
+pass at 15 but fail at 17.5 (and vice versa) and test that difference directly (McNemar's test). That is far more sensitive than comparing two
+overlapping intervals. Pairing removes the sky-to-sky variation from the comparison.

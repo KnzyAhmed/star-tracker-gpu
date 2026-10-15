@@ -139,3 +139,18 @@ def test_hot_pixels_on_gpu_equal_cpu():
     for k, (idx, val) in enumerate(draws):
         cpu[k].flat[idx] += val
     assert np.array_equal(cp.asnumpy(gpu_imgs), cpu)
+
+
+def test_campaign_rows_cpu_equal_gpu():
+    """Same trials through both backends: identical outcomes and star counts, errors within float noise."""
+    from tracker.campaign import COLUMNS, run_batch
+    from tracker.identify import build_pair_table
+    cat = load_catalog(5.5)
+    table = build_pair_table(cat.r)
+    kw = dict(seed=11, read_noise=8.0, hot_pixels=5, catalog=cat, table=table)
+    c = run_batch(np.arange(12), backend="cpu", **kw)
+    g = run_batch(np.arange(12), backend="gpu", **kw)
+    exact = [COLUMNS.index(n) for n in ("trial", "ra", "dec", "roll", "n_in_view", "n_detected", "outcome", "n_matched")]
+    assert np.array_equal(c[:, exact], g[:, exact])
+    errs = [COLUMNS.index(n) for n in ("total", "pointing", "roll_err")]
+    np.testing.assert_allclose(g[:, errs], c[:, errs], atol=1e-3, equal_nan=True)   # arcsec

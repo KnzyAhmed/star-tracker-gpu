@@ -265,3 +265,17 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 - **Built.** One shared definition of a trial's outcome (moved out of montecarlo.py so the campaign can't use a different rule).
 - **Check.** montecarlo.py refactored to use it: 100-trial run gives identical outcomes/errors before and after.
 - **Tests.** `tests/test_evaluate.py`: 3 tests (codes, no solution → NaN errors, threshold split ±1″). Suite: **108 passed**.
+
+### Hot pixels on the GPU: `render_cpu.draw_hot_pixels`, `gpu.add_hot_pixels_batch`
+- Host draws (flat indices, float32 values) once; CPU and GPU both add them → identical images. `add_hot_pixels` uses the same draw
+  order as before, so Day 3 stress results still reproduce. Tests: 1 CPU, 1 GPU.
+
+### `tracker/campaign.py` + `experiments/campaign.py`
+- **Built.** `trial_attitude`, `trial_hot_pixels`, `run_batch` (cpu|gpu backend; identify + score always on CPU float64),
+  `run_condition` (CSV per condition, append per batch, resume by skipping finished trials). `experiments/campaign.py` defines the
+  conditions: baseline 100k, noise 2.5–20 ×10k, hot pixels 5–80 ×10k (seed 2026, eps 25″), writes `results/campaign/*.csv` + meta.json.
+- **Decisions.** Per-trial seeding (resume-safe, batch-independent, CPU == GPU). Common random numbers across conditions (paired sweeps).
+  CPU backend uses the counter noise (slow but identical to GPU) because it is for tests and smoke runs, not the benchmark.
+- **Measured.** CPU smoke run (scale 0.002: 200 baseline + 12×20): 12.6 s, ~25 ms/trial; all files written.
+- **Tests.** `tests/test_campaign.py` 5 (row contents, batch independence, shared skies, hot pixels add 8–10 detections, resume);
+  `test_gpu.py` +1 (CPU rows == GPU rows). Suite (Mac): **114 passed**.
