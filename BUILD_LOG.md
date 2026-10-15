@@ -244,3 +244,9 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   - rough timing, 128-frame batch, median of 5 after warm-up: render **0.243 ms/frame**; render + detect + star-list download
     **0.318 ms/frame** (CPU single core: 8.3 + 5.1 = 13.4 ms). Not the Day 6 benchmark (no multi-core CPU baseline yet).
 - **GATE: PASS.** Noise off → GPU image equals CPU to float32 tolerance; same stars detected.
+
+### Decision (2026-10-15): add a public demo website as Day 7
+- Owner's idea, discussed first. Options: (A) replay of precomputed skies, (B) the real Python tracker running live in the browser
+  via Pyodide, (C) a Streamlit-style app with a server. **Chose B** for the live part; the Monte Carlo/benchmark charts are stored
+  results on a separate tab. GitHub Pages, public. Scheduled after Days 5–6 so the results tab has real numbers. Spec added to the project plan.
+- Rejected: C (needs a running server). GPU live on the web (no GPUs on free static hosting; GPU numbers come from the Colab runs).
