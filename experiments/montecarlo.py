@@ -22,10 +22,10 @@ from tracker.catalog import load_catalog
 from tracker.detect_cpu import detect
 from tracker.identify import EPS_ARCSEC, build_pair_table, identify
 from tracker.render_cpu import BACKGROUND, READ_NOISE, add_hot_pixels, render_sky
-from tracker.solve import attitude_error, solve_attitude
+from tracker.evaluate import CORRECT_ARCSEC, score
+from tracker.solve import solve_attitude
 from tracker.stats import wilson_interval
 
-CORRECT_ARCSEC = 300     # far above honest error (Day 2 p99 roll 28"), far below a misidentification
 
 
 def rate(k, n):
@@ -75,12 +75,9 @@ def main():
             s = time.perf_counter()
             sol = identify(unproject(u, v), table, eps_arcsec=eps)
             t_ident[t, e] = time.perf_counter() - s
+            outcome[t, e], *err[t, e], n_match[t, e] = score(sol, A)
             if sol is None:
-                outcome[t, e] = 2
                 continue
-            err[t, e] = attitude_error(sol.A, A)
-            n_match[t, e] = len(sol.det)
-            outcome[t, e] = 0 if err[t, e, 0] < CORRECT_ARCSEC else 1
             # one SVD on the final matched set: how much of identify is the solve itself
             b_m, r_m = unproject(u[sol.det], v[sol.det]), cat.r[sol.cat]
             s = time.perf_counter()

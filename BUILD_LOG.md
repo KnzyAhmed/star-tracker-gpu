@@ -260,3 +260,8 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 - **Built.** Boresight → RA (mod 360), Dec (atan2), roll from the camera x-axis against attitude_from_pointing(ra, dec, 0).
 - **Problem.** `(-1e-17) % 360 == 360.0` in float64 → mapped to 0 (test added).
 - **Tests.** 3 new (round trip from angles, rebuild of 200 random attitudes + a pole case, RA never 360). Suite: **105 passed**.
+
+### `tracker/evaluate.py`: `score`, `CORRECT/WRONG/NO_SOLUTION`, `CORRECT_ARCSEC = 300`
+- **Built.** One shared definition of a trial's outcome (moved out of montecarlo.py so the campaign can't use a different rule).
+- **Check.** montecarlo.py refactored to use it: 100-trial run gives identical outcomes/errors before and after.
+- **Tests.** `tests/test_evaluate.py`: 3 tests (codes, no solution → NaN errors, threshold split ±1″). Suite: **108 passed**.
