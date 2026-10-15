@@ -29,3 +29,14 @@ def test_bundle_runs_on_its_own(tmp_path):
                        cwd=tmp_path)
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip() == "correct"
+
+
+def test_assets_are_version_stamped(tmp_path):
+    """Every asset reference carries ?v=<hash>, so a republished site is never served from a stale cache."""
+    out = build(tmp_path / "_site")
+    v = (out / "version.txt").read_text().strip()
+    assert len(v) == 10
+    html = (out / "index.html").read_text()
+    assert f'style.css?v={v}' in html and f'app.js?v={v}' in html and f'results.js?v={v}' in html
+    assert f'worker.js?v={v}' in (out / "app.js").read_text()
+    assert f'manifest.json?v={v}' in (out / "worker.js").read_text()

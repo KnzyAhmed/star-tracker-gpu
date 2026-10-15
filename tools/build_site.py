@@ -36,7 +36,38 @@ def build(out=ROOT / "_site"):
         shutil.copy2(ROOT / f, out / "py" / f)
     shutil.copytree(ROOT / "docs" / "results", out / "results")
     (out / "manifest.json").write_text(json.dumps({"python": files}, indent=1))
+    stamp(out, files)
     return out
+
+
+def stamp(out, files):
+    """Cache-busting: browsers keep style.css / app.js by name, so a visitor can see an old design
+    after a publish. Append ?v=<hash of all site sources> to every asset reference, so any change
+    to the site produces new URLs and the old cached copies are never used again."""
+    import hashlib
+    h = hashlib.sha256()
+    for page in PAGES:
+        if (out / page).exists():
+            h.update((out / page).read_bytes())
+    for f in files:
+        h.update((out / "py" / f).read_bytes())
+    v = h.hexdigest()[:10]
+    subs = {
+        "index.html": [('href="style.css"', f'href="style.css?v={v}"'), ('src="app.js"', f'src="app.js?v={v}"'),
+                       ('src="results.js"', f'src="results.js?v={v}"')],
+        "app.js": [('new Worker("worker.js")', f'new Worker("worker.js?v={v}")')],
+        "worker.js": [('fetch("manifest.json")', f'fetch("manifest.json?v={v}")'),
+                      ('fetch("py/" + f)', f'fetch("py/" + f + "?v={v}")')],
+        "results.js": [('.map((u) => fetch(u)', f'.map((u) => fetch(u + "?v={v}")')],
+    }
+    for name, pairs in subs.items():
+        path = out / name
+        text = path.read_text()
+        for old, new in pairs:
+            assert old in text, f"{name}: {old!r} not found (cache-busting hook moved?)"
+            text = text.replace(old, new)
+        path.write_text(text)
+    (out / "version.txt").write_text(v + "\n")
 
 
 if __name__ == "__main__":
