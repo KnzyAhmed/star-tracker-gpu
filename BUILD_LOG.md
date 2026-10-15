@@ -205,3 +205,42 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 - **Problem caught before it happened.** float32 u near 1000 is off by 1.2e-5 px, which changes the edge pixels by ~1e-4 relative and would break
   CPU/GPU equality. Fix: send positions relative to the box corner (error 1.9e-7 px). Amplitude flux/(2πσ²) is precomputed in float64.
 - **Tests.** `tests/test_batch.py`: 5 tests. Suite: **98 passed**.
+
+## 2026-10-15: Day 4 continued, GPU kernels and the gate
+
+### `tracker/kernels/render.cu`, `gpu.render_batch`
+- **Built.** One thread per pixel per frame, block 16×16, grid 64×64×F. Star list staged in shared memory in chunks of 64.
+  Box test with the host-computed integer boxes; dx from box-relative positions; counter-based noise identical to `tracker/noise.py`.
+  Output indexed with a 64-bit offset.
+- **Problem.** `size_t` is undefined without system headers (caught by the new clang check) → `long long`.
+
+### `tracker/kernels/detect.cu`, `gpu.detect_batch`, `detect_cpu` threshold made explicitly float32
+- **Built.** 20×20 shared tile (16 + 2-px halo), OFF_SENSOR = −FLT_MAX for off-sensor halo pixels, raster tie-break, 5×5 centroid,
+  atomicAdd slots, output = peak (exact ints) + offsets + flux. Host sorts by (−flux, v, u).
+- **Deviation from spec: capacity 256, not 64.** Frames reach 83 stars (more with hot pixels). Overflow raises RuntimeError rather than
+  dropping a thread-timing-dependent subset.
+- **Problem: a threshold test that tested nothing, twice.** (1) read_noise 5.1 gives a threshold float32 represents exactly → switched to 5.13,
+  which rounds up. (2) My premise was wrong: I assumed the CPU compares in float64. NumPy 2 (2.5.4) compares a float32 array with a Python float
+  *in float32*, but with an np.float64 it uses float64. So `detect` depended on its input *types*. Fixed by `threshold = np.float32(...)`
+  (no change for current callers) and a CPU test for both input types. The GPU uses the same float32 value.
+
+### Tooling: `tools/cuda_shim.h`, `tests/test_kernels_compile.py`
+- clang (Apple 21) syntax/type-checks the `.cu` files on the Mac, with `-Wall -Werror` and a tiny shim of CUDA keywords. It skips where clang can't
+  target CUDA (e.g. Colab). It caught the `size_t` error before any GPU run.
+
+### Running on a GPU (Colab)
+- The first attempt ran in a Chrome profile signed in to someone else's Google account. That notebook was moved to the bin and its runtime deleted
+  at the owner's request. (Its single run also showed 103 passed on a T4; not counted.)
+- On the owner's account (knzyahmed@aucegypt.edu), Drive is **full**, so new notebooks can't be created. Used Colab's built-in example notebook in
+  **playground mode** (nothing saved to Drive), uploaded a `git archive` zip via the Files panel (the repo is private), ran, then deleted the runtime.
+- `notebooks/colab_run.ipynb` added so the owner can repeat this.
+
+### Day 4 gate (2026-10-15), Tesla T4, 70 W power limit, 15,360 MiB, driver 580.82.07, CuPy 14.0.1
+- `pytest -q tests/`: **109 passed, 3 skipped** (the 3 skips are the clang checks). All 10 GPU tests passed.
+- `experiments/gpu_check.py` (commit a557d68):
+  - render noise off: max |GPU−CPU| **4.88e-4 counts** (= 1 float32 ulp in 4096–8192), max relative 5.15e-7, 0.06 % of pixels differ.
+  - render counter noise: max |GPU−CPU| 4.88e-4 counts; max relative 1.87e-3 (only near-zero pixels); 10.3 % of pixels differ by an ulp (log/cos).
+  - detect: same star count in **16/16** frames, max centroid difference **3.2e-7 px**.
+  - rough timing, 128-frame batch, median of 5 after warm-up: render **0.243 ms/frame**; render + detect + star-list download
+    **0.318 ms/frame** (CPU single core: 8.3 + 5.1 = 13.4 ms). Not the Day 6 benchmark (no multi-core CPU baseline yet).
+- **GATE: PASS.** Noise off → GPU image equals CPU to float32 tolerance; same stars detected.

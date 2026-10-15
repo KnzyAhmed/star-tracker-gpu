@@ -491,3 +491,60 @@ shifts the blob slightly, and the brightness at the box edge then disagrees with
 **Interview question.** *"Your GPU and CPU results differ in the 4th digit. Where do you look first?"*
 Answer: at large numbers stored in float32 and then subtracted (catastrophic cancellation). Positions, timestamps and global indices are the usual
 suspects. The fix is to subtract on the host in float64 and send small offsets, or keep that one quantity in float64.
+
+---
+
+### `render.cu` / `gpu.render_batch`: one thread per pixel (`tracker/kernels/render.cu`, `tracker/gpu.py`)
+
+**What it does.** It draws 128 frames at once. Thread (x, y) of block z owns pixel [z, y, x]. It starts from the background, adds every star whose box
+contains it, then adds the counter-based noise. The result stays on the GPU as a CuPy array.
+
+**IN / OUT.** IN: a `StarBatch` (offsets, du, dv, amp, box), `seed`, `frame_ids`. OUT: (F, 1024, 1024) float32 CuPy array.
+Launch: block 16×16 = 256 threads, grid 64 × 64 × F. That's 1,048,576 threads per frame, 134 M for a 128-frame batch.
+
+**Worked example: who draws what.** A star at u = 300.3 has box columns 295..306. The thread for column x = 297 computes
+dx = (297 − 295) − du = 2 − 5.3 = −3.3 px, so it adds amp · exp(−(3.3² + dy²)/(2·1.2²)). The thread for x = 310 is outside the box and adds nothing.
+This is exactly the CPU loop, turned inside out: the CPU loops over stars and touches their pixels, while the GPU gives each pixel a thread that loops over stars.
+
+**Why shared memory, in chunks of 64.** All 256 threads in a block need the *same* star list. One cooperative load into shared memory
+(an on-chip cache shared by the block) replaces 256 separate reads of each star. Chunks of 64 keep that tile small and still handle any star count:
+the test uses 150 stars, which takes 3 chunks.
+**The trap:** `__syncthreads()` is a barrier every thread of the block must reach. So the "is my pixel on the sensor?" early exit happens only *after* the loop.
+Returning earlier could leave the other threads waiting at the barrier forever.
+
+**Measured on a Tesla T4 (Colab, 70 W).** GPU vs CPU, noise off: max difference **4.9·10⁻⁴ counts**, which is one float32 rounding step for values
+4,096–8,192; 0.06 % of pixels differ at all. Render takes **0.243 ms/frame** against 8.3 ms on one CPU core.
+
+**Interview question.** *"Why one thread per pixel rather than one thread per star?"*
+Answer: one thread per star would need many threads writing into the same pixels where blobs overlap. That means atomic adds, which are slow,
+and their order isn't fixed, so float sums wouldn't be reproducible. One thread per pixel only *reads* the stars and writes its own pixel once:
+no races, and a deterministic order (stars in list order, like the CPU). The cost is that each thread checks every star's box, which is cheap for ≤ ~100 stars.
+
+### `detect.cu` / `gpu.detect_batch`: threshold, local max, centroid on the GPU
+
+**What it does.** Same contract as `detect_cpu.detect`, for a whole batch, without the images leaving the GPU.
+Each 16×16 block copies a **20×20 tile** (its pixels plus a 2-px halo) into shared memory. Each thread then tests its pixel:
+threshold, 3×3 local max with the same tie-break, and the 5×5 centroid. A found star claims an output slot with **`atomicAdd`** on its frame's counter.
+
+**IN / OUT.** IN: (F, 1024, 1024) CuPy images, background, read_noise. OUT: a list of F `(u, v, flux)` NumPy tuples, brightest first.
+
+**Worked example: why a 2-px halo.** A thread at the left edge of its tile (threadIdx.x = 0) needs the 5×5 window, which reaches columns −2..+2.
+The two columns to its left belong to the *neighbouring* block, so the tile stores them too: 16 + 2 + 2 = 20 wide.
+On the sensor edge, those halo pixels are set to OFF_SENSOR (−FLT_MAX). That value loses every local-max comparison and counts as zero weight, which is
+exactly what the CPU's −inf and background padding do.
+
+**Three design points.**
+- *atomicAdd makes the order random*, so the host sorts by flux (ties by position). Tests compare by position, never by order.
+- *Overflow fails loudly.* The counter keeps counting past capacity (256, not the spec's 64). If more stars arrive than slots, *which* ones got a slot would
+  depend on thread timing, so `detect_batch` raises instead of silently returning an arbitrary subset.
+- *Same threshold, bit for bit.* NumPy 2 compares a float32 image with a Python-float threshold *in float32*, but an `np.float64` threshold
+  would switch it to float64. `detect_cpu` now makes this explicit (`np.float32(...)`), and the GPU gets that same float32 value.
+
+**Measured (T4).** Same star count in 16/16 frames; max centroid difference **3.2·10⁻⁷ px**.
+Render + detect + star-list download: **0.318 ms/frame**, against 13.4 ms per frame for both stages on one CPU core.
+(A first look only: the fair benchmark against all CPU cores is Day 6.)
+
+**Interview question.** *"Your GPU detector finds the same stars as the CPU but in a different order each run. Is that a bug?"*
+Answer: no. Slots are claimed with atomicAdd, and which thread gets there first depends on scheduling. The *set* is deterministic; the order isn't.
+So the host sorts into a canonical order before anything downstream uses the list. The real bug to guard against is overflow: then the *set* would depend on timing too.
+That's why it raises an error.
