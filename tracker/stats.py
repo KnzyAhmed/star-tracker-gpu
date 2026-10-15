@@ -16,3 +16,21 @@ def wilson_interval(k, n, z=1.96):
     centre = (p + z**2 / (2 * n)) / denom
     half = z / denom * np.sqrt(p * (1 - p) / n + z**2 / (4 * n**2))
     return np.clip(centre - half, 0, 1), np.clip(centre + half, 0, 1)
+
+
+def outcome_rates(outcome, group=None):
+    """Count correct / wrong / no-solution (outcome 0 / 1 / 2) per group, with Wilson 95 % intervals.
+
+    Returns a dict of equal-length arrays, one entry per distinct group value (sorted):
+    group, n, correct, wrong, none, and for each of the three: <name>_lo, <name>_hi as rates.
+    """
+    outcome = np.asarray(outcome).astype(int)
+    group = np.zeros(len(outcome)) if group is None else np.asarray(group)
+    keys, inv = np.unique(group, return_inverse=True)
+    n = np.bincount(inv, minlength=len(keys))
+    t = {"group": keys, "n": n}
+    for code, name in enumerate(("correct", "wrong", "none")):
+        k = np.bincount(inv[outcome == code], minlength=len(keys))
+        t[name] = k
+        t[name + "_lo"], t[name + "_hi"] = wilson_interval(k, np.maximum(n, 1))
+    return t

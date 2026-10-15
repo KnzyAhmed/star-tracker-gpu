@@ -279,3 +279,14 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 - **Measured.** CPU smoke run (scale 0.002: 200 baseline + 12×20): 12.6 s, ~25 ms/trial; all files written.
 - **Tests.** `tests/test_campaign.py` 5 (row contents, batch independence, shared skies, hot pixels add 8–10 detections, resume);
   `test_gpu.py` +1 (CPU rows == GPU rows). Suite (Mac): **114 passed**.
+
+### `tracker/stats.outcome_rates` + `experiments/analyze_campaign.py`
+- **Built.** Per-group counts of correct/wrong/no solution with Wilson intervals (tested, 2 tests). Analysis script → `analysis/report.txt`,
+  `summary.json` (for the Day 7 website), figures: read-noise sweep, hot-pixel sweep (each: success with 95 % CI + detections,
+  two panels, no dual axis), success vs stars in view, Mollweide failure map over star density, pointing/roll histograms.
+  Colours from the dataviz reference palette (blue/orange series, red = failures).
+- **Problems.** (1) matplotlib rejects a −1e−14 error bar at exactly 100 % → clipped at 0. (2) Overlapping "n=" labels and a legend
+  over the colour-bar label → moved n into the title, legend below.
+- **Sanity check.** The smoke run showed noise 20 at 20/20 correct (Day 3: 86 %). Detections did fall (27.5 → 11.6), so noise was applied;
+  200 trials gave **172/200 = 86.0 % [80.5, 90.1]**, 0 wrong, the same as Day 3. The first 20 were just all solvable.
+- Suite (Mac): **116 passed**.

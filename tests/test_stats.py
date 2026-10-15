@@ -34,3 +34,22 @@ def test_coverage_is_about_95_percent():
     k = rng.binomial(200, 0.97, size=20000)
     lo, hi = wilson_interval(k, 200)
     assert 0.93 < np.mean((lo <= 0.97) & (0.97 <= hi)) < 0.97
+
+
+def test_outcome_rates_by_group():
+    from tracker.stats import outcome_rates
+    outcome = np.array([0, 0, 1, 2, 0, 0, 0, 2])
+    group = np.array([5, 5, 5, 5, 9, 9, 9, 9])
+    t = outcome_rates(outcome, group)
+    assert t["group"].tolist() == [5, 9] and t["n"].tolist() == [4, 4]
+    assert t["correct"].tolist() == [2, 3] and t["wrong"].tolist() == [1, 0] and t["none"].tolist() == [1, 1]
+    lo, hi = wilson_interval(2, 4)
+    assert np.isclose(t["correct_lo"][0], lo) and np.isclose(t["correct_hi"][0], hi)
+    lo, hi = wilson_interval(0, 4)
+    assert np.isclose(t["wrong_lo"][1], lo) and np.isclose(t["wrong_hi"][1], hi)
+
+
+def test_outcome_rates_without_groups_is_one_row():
+    from tracker.stats import outcome_rates
+    t = outcome_rates(np.array([0, 0, 2]))
+    assert t["n"].tolist() == [3] and t["correct"].tolist() == [2] and t["none"].tolist() == [1]
