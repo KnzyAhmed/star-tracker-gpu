@@ -383,3 +383,18 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 - **Checked in Chrome.** Desktop 1300 px: all three tabs. Phone 390 px: an overflow to 399 px was traced (JS: elements with right > 390)
   to the nowrap comparison table in the solve section stretching the one-column grid → `min-width: 0`, scrollable `.answer`,
   first column may wrap. Now exactly 390 px wide.
+
+### Website, second pass (2026-10-15, owner's review): blue tones, text boxes, 3-D sphere, Starlink/Space Advisor layout
+- **Brief.** Blue tones instead of violet; text should not sit on bare stars (text-box effect); the globe should look 3-D and sit on
+  one side with the space image behind it; the pointing panel underneath it. References: the Starlink concept and Space Advisor.
+- **Built.** Palette #04070f → #081225 → #12264a → #1f4f8f → #4aa3ff/#9fd0ff. `.box` = dark glass panel (rgba(5,11,26,.74) +
+  blur) on every text block, captions, controls, timeline, tables and figures. Background = the owner's Webb nebula
+  (`web/bg.webp`, 640 px source) converted to a blue duotone with Pillow (grayscale → colorize navy/steel/ice → darkened, 39 KB),
+  blurred 6 px behind the starfield; credit in the footer. Globe: ZOOM 1 (true orthographic hemisphere), body gradient lit from the
+  upper left, grid and stars fading toward the limb, limb-darkening overlay, specular highlight, glowing FOV box, atmosphere glow.
+  Layout: left column = title box → camera image; right column = sphere → "pointing and conditions" panel (2-column sliders);
+  solve timeline full width. Charts re-rendered with the blue dark palette.
+- **Problems.** (1) Grid rows aligned the two columns and left a hole under the title box → two independent flex columns
+  (`display: contents` on phones to reorder: title, globe, panel, image, solve). (2) Phone overflow to 405 px: the desktop
+  `align-items: start` leaked into the phone flex column, so `.solve` sized to its content → `align-items: stretch` in the media query.
+  Both found by measuring element rects with JS in a 390-px iframe. Final: 390 px, all boxes 358 px.

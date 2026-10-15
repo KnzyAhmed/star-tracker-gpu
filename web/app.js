@@ -21,7 +21,7 @@ const css = (name) => getComputedStyle(document.documentElement).getPropertyValu
       const x = rnd() * innerWidth, y = rnd() * innerHeight, r = rnd();
       const size = r < 0.92 ? 0.6 + rnd() * 0.6 : 1.2 + rnd() * 1.3;
       const a = 0.25 + rnd() * 0.6;
-      ctx.fillStyle = r < 0.1 ? `rgba(179,157,255,${a})` : r < 0.2 ? `rgba(157,180,255,${a})` : `rgba(238,240,255,${a})`;
+      ctx.fillStyle = r < 0.1 ? `rgba(159,208,255,${a})` : r < 0.2 ? `rgba(74,163,255,${a})` : `rgba(232,240,255,${a})`;
       ctx.beginPath(); ctx.arc(x, y, size, 0, 2 * Math.PI); ctx.fill();
     }
   };
@@ -59,7 +59,7 @@ worker.onmessage = (e) => {
     S.skyR = m.sky.ra.map((ra, i) => unit(ra, m.sky.dec[i]));
     S.info = m.info;
     $("loading").hidden = true;
-    $("live").hidden = false;
+    for (const el of document.querySelectorAll(".needs-ready")) el.hidden = false;
     syncInputs();
     drawGlobe();
     solve();
@@ -120,7 +120,7 @@ for (const id of ["showDots", "showNames", "showTruth"]) $(id).addEventListener(
 
 // ---------------------------------------------------------------- sky globe
 const globe = $("globe"), g = globe.getContext("2d");
-const ZOOM = 1.9;                                // orthographic zoom: ~±32 deg of sky across the disc
+const ZOOM = 1.0;                                // orthographic sphere: the full hemisphere in front of the camera
 
 function project(axes, r, R, cx, cy) {
   const bz = dot(r, axes[2]);
@@ -129,17 +129,20 @@ function project(axes, r, R, cx, cy) {
 
 function drawGlobe() {
   if (!S.sky) return;
-  const W = globe.width, cx = W / 2, cy = W / 2, R = W / 2 - 2;
+  const W = globe.width, cx = W / 2, cy = W / 2, R = W / 2 - 4;
   const axes = cameraAxes(S.ra, S.dec, S.roll);
   g.clearRect(0, 0, W, W);
   g.save();
   g.beginPath(); g.arc(cx, cy, R, 0, 2 * Math.PI);
-  const bg = g.createRadialGradient(cx * 0.8, cy * 0.75, R * 0.1, cx, cy, R);
-  bg.addColorStop(0, "#141a48"); bg.addColorStop(0.6, "#0a0d2c"); bg.addColorStop(1, "#05061a");
-  g.fillStyle = bg; g.fill(); g.clip();
+  // the sphere: lit from the upper left, dark towards the limb
+  const body = g.createRadialGradient(cx - 0.45 * R, cy - 0.45 * R, R * 0.05, cx - 0.1 * R, cy - 0.1 * R, R * 1.15);
+  body.addColorStop(0, "#2b5aa0"); body.addColorStop(0.35, "#132d5c"); body.addColorStop(0.75, "#071431"); body.addColorStop(1, "#02050f");
+  g.fillStyle = body; g.fill(); g.clip();
 
-  // RA / Dec grid
-  g.strokeStyle = "rgba(179,157,255,0.16)"; g.lineWidth = 1;
+  // RA / Dec grid, fading towards the limb so the curvature reads
+  const gridInk = g.createRadialGradient(cx, cy, 0, cx, cy, R);
+  gridInk.addColorStop(0, "rgba(159,208,255,0.42)"); gridInk.addColorStop(0.8, "rgba(159,208,255,0.2)"); gridInk.addColorStop(1, "rgba(159,208,255,0.04)");
+  g.strokeStyle = gridInk; g.lineWidth = 1;
   const line = (pts) => { g.beginPath(); let pen = false;
     for (const r of pts) { const [x, y, z] = project(axes, r, R, cx, cy);
       if (z > 0) { pen ? g.lineTo(x, y) : g.moveTo(x, y); pen = true; } else pen = false; }
@@ -147,22 +150,25 @@ function drawGlobe() {
   for (let d = -75; d <= 75; d += 15) line(Array.from({ length: 181 }, (_, i) => unit(i * 2, d)));
   for (let a = 0; a < 360; a += 15) line(Array.from({ length: 91 }, (_, i) => unit(a, -90 + i * 2)));
 
-  // stars
+  // stars on the sphere: smaller and fainter near the limb
   const sky = S.sky;
   g.font = "500 12px Inter, system-ui";
   for (let i = 0; i < S.skyR.length; i++) {
     const [x, y, z] = project(axes, S.skyR[i], R, cx, cy);
-    if (z <= 0 || Math.hypot(x - cx, y - cy) > R) continue;
-    const rad = Math.max(0.6, 3.8 - 0.6 * sky.mag[i]);
-    if (rad > 2) { g.shadowColor = "rgba(238,240,255,0.9)"; g.shadowBlur = 8; } else g.shadowBlur = 0;
-    g.beginPath(); g.arc(x, y, rad, 0, 2 * Math.PI); g.fillStyle = "#eef0ff"; g.fill();
+    if (z <= 0) continue;
+    const depth = 0.45 + 0.55 * z;
+    const rad = Math.max(0.5, 3.6 - 0.6 * sky.mag[i]) * depth;
+    g.globalAlpha = 0.35 + 0.65 * z;
+    if (rad > 1.8) { g.shadowColor = "rgba(232,240,255,0.9)"; g.shadowBlur = 8; } else g.shadowBlur = 0;
+    g.beginPath(); g.arc(x, y, rad, 0, 2 * Math.PI); g.fillStyle = "#e8f0ff"; g.fill();
     g.shadowBlur = 0;
-    if (sky.name[i]) { g.fillStyle = css("--gold"); g.fillText(sky.name[i], x + 6, y - 5); }
+    if (sky.name[i] && z > 0.35) { g.fillStyle = css("--gold"); g.fillText(sky.name[i], x + 6, y - 5); }
   }
+  g.globalAlpha = 1;
 
-  // camera field of view (the pinhole's square, seen on the sphere)
-  g.strokeStyle = css("--accent"); g.lineWidth = 1.5;
-  g.shadowColor = "rgba(157,180,255,0.9)"; g.shadowBlur = 10;
+  // the camera's field of view: the pinhole's square, drawn on the sphere
+  g.strokeStyle = css("--accent"); g.lineWidth = 2;
+  g.shadowColor = "rgba(74,163,255,1)"; g.shadowBlur = 14;
   g.beginPath();
   const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]];
   for (let k = 0; k < 4; k++) for (let t = 0; t <= 1.0001; t += 0.1) {
@@ -174,12 +180,17 @@ function drawGlobe() {
   }
   g.stroke();
   g.shadowBlur = 0;
-  // boresight cross
-  g.strokeStyle = "rgba(157,180,255,0.6)"; g.lineWidth = 1;
-  g.beginPath(); g.moveTo(cx - 8, cy); g.lineTo(cx + 8, cy); g.moveTo(cx, cy - 8); g.lineTo(cx, cy + 8); g.stroke();
+  g.strokeStyle = "rgba(159,208,255,0.7)"; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(cx - 7, cy); g.lineTo(cx + 7, cy); g.moveTo(cx, cy - 7); g.lineTo(cx, cy + 7); g.stroke();
+
+  // limb darkening and a soft specular highlight: what makes it read as a ball
+  const limb = g.createRadialGradient(cx, cy, R * 0.55, cx, cy, R);
+  limb.addColorStop(0, "rgba(2,5,15,0)"); limb.addColorStop(1, "rgba(2,5,15,0.85)");
+  g.fillStyle = limb; g.fillRect(0, 0, W, W);
+  const spec = g.createRadialGradient(cx - 0.5 * R, cy - 0.5 * R, 0, cx - 0.5 * R, cy - 0.5 * R, R * 0.7);
+  spec.addColorStop(0, "rgba(200,225,255,0.22)"); spec.addColorStop(1, "rgba(200,225,255,0)");
+  g.fillStyle = spec; g.fillRect(0, 0, W, W);
   g.restore();
-  g.fillStyle = css("--muted"); g.font = "500 10px Inter, system-ui";
-  g.fillText("NORTH ↑ AT ROLL 0 · EAST ←", 22, W - 22);
 }
 
 // drag: move the boresight opposite to the drag, in the camera's own axes (works at any roll, at the poles)

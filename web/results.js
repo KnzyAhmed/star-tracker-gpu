@@ -6,7 +6,7 @@
   let done = false;
   const pct = (k, n, dp = 2) => (100 * k / n).toFixed(dp);
   const ci = (lo, hi, dp = 2) => `[${(100 * lo).toFixed(dp)}, ${(100 * hi).toFixed(dp)}]`;
-  const fig = (src, alt, cap) => `<figure><img src="${src}" alt="${alt}" loading="lazy"><figcaption>${cap}</figcaption></figure>`;
+  const fig = (src, alt, cap) => `<figure class="box"><img src="${src}" alt="${alt}" loading="lazy"><figcaption>${cap}</figcaption></figure>`;
   const h = (num, text) => `<h2 class="res-h"><span class="num">${num}</span><span class="cap">${text}</span></h2>`;
 
   function sweepTable(title, unit, s) {
@@ -14,7 +14,7 @@
       `<tr><td>${lv}</td><td>${s.n[i].toLocaleString()}</td><td>${pct(s.correct[i], s.n[i])} %</td>` +
       `<td>${ci(s.correct_lo[i], s.correct_hi[i])}</td><td>${s.wrong[i]}</td><td>${s.no_solution[i].toLocaleString()}</td>` +
       `<td>${s.mean_detected[i].toFixed(1)}</td></tr>`).join("");
-    return `<div class="res-table"><table class="cmp">
+    return `<div class="res-table box"><table class="cmp">
       <tr><th>${unit}</th><th>trials</th><th>correct</th><th>95 % CI</th><th>wrong</th><th>no solution</th><th>dots / frame</th></tr>
       ${rows}</table><p class="muted small" style="margin:8px 0 0">${title}</p></div>`;
   }
@@ -34,7 +34,7 @@
       const thr = Object.fromEntries(cpu.throughput.map((r) => [`${r.workers}-${r.full}`, r.ms_per_frame]));
       const n = cpu.host.cores, g = gpu.gpu.ms_per_frame_median, gpuRD = g.pack + g.gpu_wall;
       el.innerHTML = `
-        <div class="tiles">
+        <div class="tiles box">
           <div class="tile"><div class="big">${b.correct.toLocaleString()} / ${b.n.toLocaleString()}</div>
             <div class="lbl">random skies solved, normal noise (≥ ${(100 * b.correct_ci[0]).toFixed(3)} % at 95 % confidence)</div></div>
           <div class="tile"><div class="big">${wrongAll} wrong</div><div class="lbl">in all ${totalTrials.toLocaleString()} trials at every noise and fake-star level: a failure is always "no solution"</div></div>
@@ -63,7 +63,7 @@
         <div class="res-grid">${fig("results/day6/dark/benchmark.png", "Benchmark chart",
           `Render + detect: ${thr["1-false"].toFixed(2)} ms on 1 core, ${thr[`${n}-false`].toFixed(2)} ms on ${n} cores, ` +
           `${gpuRD.toFixed(2)} ms on the T4 (transfers included). End to end, identification on the CPU becomes the bottleneck (Amdahl's law).`)}</div>
-        <p class="hardware">CPU: ${cpu.host.cpu} (${cpu.host.cores_detail || n + " cores"}, ${cpu.host.power_source} power) · GPU: ${gpu.host.gpu} ·
+        <p class="hardware box">CPU: ${cpu.host.cpu} (${cpu.host.cores_detail || n + " cores"}, ${cpu.host.power_source} power) · GPU: ${gpu.host.gpu} ·
           Colab host: ${gpu.host.cpu}, ${gpu.host.cores} vCPU</p>`;
     } catch (err) {
       el.innerHTML = `<p class="headline wrong">Could not load results</p><p class="muted small">${String(err)}</p>`;

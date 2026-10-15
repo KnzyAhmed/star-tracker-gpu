@@ -34,9 +34,9 @@ THEMES = {  # the website's dark "lost in space" theme: same series hues stepped
     "light": dict(SURFACE="#fcfcfb", INK="#0b0b0b", INK2="#52514e", GRID="#e4e3df",
                   BLUE="#2a78d6", ORANGE="#eb6834", RED="#d03b3b",
                   seq=["#cde2fb", "#6da7ec", "#256abf", "#0d366b"], transparent=False),
-    "dark": dict(SURFACE="#0b0e24", INK="#eef0ff", INK2="#b8bce0", GRID="#2a2f58",
-                 BLUE="#9db4ff", ORANGE="#ff9a6e", RED="#ff6b6b",
-                 seq=["#241a4d", "#5a3bb5", "#9b7bff", "#e6dcff"], transparent=True),
+    "dark": dict(SURFACE="#070f22", INK="#e8f0ff", INK2="#b3c3dc", GRID="#1e3356",
+                 BLUE="#6fb3ff", ORANGE="#ffb067", RED="#ff6b6b",
+                 seq=["#0b1a3a", "#1f4f8f", "#4aa3ff", "#cfe8ff"], transparent=True),
 }
 
 

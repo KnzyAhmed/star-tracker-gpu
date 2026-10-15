@@ -19,8 +19,8 @@ BLUE, ORANGE, AQUA, YELLOW, MAGENTA = "#2a78d6", "#eb6834", "#1baf7a", "#eda100"
 DARK = "--theme" in sys.argv and "dark" in sys.argv          # python -m experiments.benchmark_report --theme dark
 if DARK:                                                      # website theme: transparent figure, light ink
     OUT = OUT / "dark"
-    SURFACE, INK, INK2, GRID = "#0b0e24", "#eef0ff", "#b8bce0", "#2a2f58"
-    BLUE, ORANGE, AQUA, YELLOW = "#9db4ff", "#ff9a6e", "#5fe3c0", "#f3c969"
+    SURFACE, INK, INK2, GRID = "#070f22", "#e8f0ff", "#b3c3dc", "#1e3356"
+    BLUE, ORANGE, AQUA, YELLOW = "#6fb3ff", "#ffb067", "#5fe3c0", "#f3c969"
 SAVE = {"transparent": True} if DARK else {}
 plt.rcParams.update({"figure.facecolor": SURFACE, "axes.facecolor": SURFACE, "axes.edgecolor": GRID,
                      "axes.labelcolor": INK2, "xtick.color": INK2, "ytick.color": INK2, "text.color": INK,

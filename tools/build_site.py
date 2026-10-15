@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SKIP = {"gpu.py", "fetch_catalog.py"}           # CuPy / astroquery: not available in the browser
-PAGES = ("index.html", "style.css", "app.js", "worker.js", "results.js")
+PAGES = ("index.html", "style.css", "app.js", "worker.js", "results.js", "bg.webp")
 
 
 def build(out=ROOT / "_site"):
