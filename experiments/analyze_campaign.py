@@ -15,6 +15,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib import patheffects
 
 from experiments.campaign import HOT_SWEEP, NOISE_SWEEP
 from tracker.campaign import COLUMNS
@@ -142,7 +143,7 @@ def main():
             continue
         b = np.digitize(rows[:, C["n_in_view"]], bins) - 1
         t = outcome_rates(rows[:, C["outcome"]], b)
-        centers = (bins[t["group"]] + bins[t["group"] + 1]) / 2
+        centers = np.array([rows[b == g, C["n_in_view"]].mean() for g in t["group"]])   # real mean per bin
         errorbar_rates(ax[0], centers, t, color, label)
         L += [f"  {label}:"] + [rate_line(f"{bins[g]}-{bins[g + 1] - 1} stars", t, i) for i, g in enumerate(t["group"])]
         S.setdefault("stars_in_view", {})[label] = {"bin_lo": bins[t["group"]].tolist(), "bin_hi": (bins[t["group"] + 1] - 1).tolist(),
@@ -163,16 +164,23 @@ def main():
     fig = plt.figure(figsize=(11, 5.6), dpi=130)
     ax = fig.add_subplot(projection="mollweide")
     hb = ax.hexbin(lon(base[:, C["ra"]]), np.radians(base[:, C["dec"]]), C=base[:, C["n_in_view"]],
-                   gridsize=45, cmap=SEQ, reduce_C_function=np.mean, linewidths=0)
+                   gridsize=45, cmap=SEQ, reduce_C_function=np.mean, linewidths=0.8, edgecolors="face")
     fig.colorbar(hb, ax=ax, orientation="horizontal", fraction=0.05, pad=0.08, label="mean catalog stars in view")
     every = [r for r in [base] + noise_runs + hot_runs if r is not None]
     fails = np.vstack([r[r[:, C["outcome"]] != CORRECT] for r in every])
     if len(fails):
+        n_base_fail = int((base[:, C["outcome"]] != CORRECT).sum())
         ax.scatter(lon(fails[:, C["ra"]]), np.radians(fails[:, C["dec"]]), s=16, color=RED, edgecolor=SURFACE,
-                   linewidth=0.4, label=f"not correct, any condition ({len(fails):,} of {sum(len(r) for r in every):,} trials)")
+                   linewidth=0.4, label=f"not correct: {len(fails):,} of {sum(len(r) for r in every):,} trials "
+                                        f"(baseline {n_base_fail:,}; the rest from the noise / hot-pixel sweeps)")
         ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.36), frameon=False)
     ax.set_xticks(np.radians([-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150]))
-    ax.set_xticklabels([f"{(180 - x) % 360}°" for x in (-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150)], fontsize=7)
+    ax.set_xticklabels([])                          # the built-in labels sit under the hexes: draw our own
+    halo = [patheffects.withStroke(linewidth=2.5, foreground=SURFACE)]
+    for x in (-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150):
+        ax.text(np.radians(x), np.radians(-4), f"{(180 - x) % 360}°", ha="center", va="top", fontsize=7,
+                color=INK, zorder=10, path_effects=halo)
+    ax.set_xlabel("right ascension (increases to the left)")
     ax.set_title("Where the tracker fails: boresight of every non-correct trial over star density (RA, Dec)")
     fig.savefig(out / "failure_map.png", bbox_inches="tight")
     plt.close(fig)

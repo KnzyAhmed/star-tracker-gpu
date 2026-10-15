@@ -599,3 +599,29 @@ the conditions then measures the *effect of noise*, not luck in which skies were
 Answer: with independent samples, not on that comparison alone. Here the skies are *paired* (common random numbers): I can count the trials that
 pass at 15 but fail at 17.5 (and vice versa) and test that difference directly (McNemar's test). That is far more sensitive than comparing two
 overlapping intervals. Pairing removes the sky-to-sky variation from the comparison.
+
+---
+
+### Day 5 results: what 220,000 simulated skies say (`docs/results/day5/`)
+
+**Headline.** Baseline: **100,000 / 100,000 correct**, so the success rate is ≥ 99.996 % at 95 % confidence. **Zero wrong answers in all 220,000 trials**,
+under every noise and hot-pixel setting: the wrong-answer rate is < 0.0017 % (95 %). Every failure was an honest "no solution".
+Accuracy (correct baseline trials): pointing **1.58″** median / 4.6″ p99, roll **6.5″** median / 28″ p99.
+
+**Robustness** (10,000 trials per point, % correct): read noise 10 → 99.99; 12.5 → 99.59; 15 → 98.06; 17.5 → 93.28; 20 → 86.35.
+Hot pixels 10 → 99.99; 20 → 99.83; 40 → 98.11; 80 → 80.54.
+
+**Three things to understand.**
+1. *Why 100,000 trials?* With 0 failures in n trials, you can only claim the failure rate is below ≈ 3/n (rule of three). 1,000 trials → < 0.3 %;
+   100,000 → < 0.003 %. Rare-event claims need many trials. That is the whole reason for the GPU: 220,000 frames took 19 min on a T4.
+2. *The tracker fails where the sky is empty.* At noise 20, failures are 2.5 % within 15° of the Milky Way plane (39 stars in view on average), but 29 %
+   within 30° of the galactic poles (18 stars). Success vs stars in view: 0 % with < 10 stars, 41 % with 10–14, 100 % with 40+.
+   The vote needs enough *real* stars to beat the coincidences (the signal-vs-noise argument from the eps stress test), and noise hides the faint ones first.
+3. *It fails safe.* As noise rises, failures grow, but they are all "no solution", never a wrong attitude. The consistency check plus the ≥ 4-star verify
+   turn doubt into silence. For a spacecraft, that is the property that matters most: a wrong attitude can drive a bad manoeuvre, while "no solution" just
+   means "use the gyros and try the next frame".
+
+**Interview question.** *"How would you make your tracker work in the sparse regions near the galactic poles?"*
+Answer: give the vote more real stars. Use a fainter catalog limit with a more sensitive camera (more stars per field); widen the field of view; use a
+lower detection threshold with a better centroider (more faint stars detected, at the cost of more false dots); or use more distinctive patterns
+(triangles) so fewer stars are needed. Operationally, a spacecraft can also avoid pointing the tracker at the poles, or use two tracker heads.

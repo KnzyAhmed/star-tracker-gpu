@@ -290,3 +290,22 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 - **Sanity check.** The smoke run showed noise 20 at 20/20 correct (Day 3: 86 %). Detections did fall (27.5 → 11.6), so noise was applied;
   200 trials gave **172/200 = 86.0 % [80.5, 90.1]**, 0 wrong, the same as Day 3. The first 20 were just all solvable.
 - Suite (Mac): **116 passed**.
+
+### Day 5 campaign run (2026-10-15), Colab Tesla T4 (70 W), Python 3.13.15, private account
+- Mac: smoke + 1 % pilot (2,200 frames on the GPU: 3 ms/trial end to end). GPU test suite on Colab: **125 passed, 3 skipped**
+  (skips = Mac-only clang checks; includes CPU rows == GPU rows and GPU hot pixels == CPU).
+- Full campaign: **220,000 frames in 19 min 18 s** (baseline 100k in 335 s ≈ 3.4 ms/trial; hot_80 was slowest at 38 ms/trial because
+  ~107 dots per frame make identification O(N²) work). 220,013 CSV lines = 220,000 rows + 13 headers. 21 MB.
+- Results downloaded with the owner's permission (campaign_results.zip, 10.1 MB) → `results/campaign/` (git-ignored). The analysis re-run
+  on the Mac gives a **byte-identical report**. Report, summary.json and figures copied to the tracked `docs/results/day5/`.
+- **Baseline:** 100,000/100,000 correct, CI [99.996, 100] %. Pointing p50/p90/p99/p99.9 = 1.58/3.06/4.61/6.09″; roll 6.45/16.60/28.17/38.67″.
+  Stars in view mean 27.3 (min 7, max 85); the 88 baseline frames with < 10 stars were all solved.
+- **Noise sweep** (correct %): 2.5 100 · 5 100 · 7.5 100 · 10 99.99 · 12.5 99.59 [99.44, 99.70] · 15 98.06 [97.77, 98.31] ·
+  17.5 93.28 [92.77, 93.75] · 20 86.35 [85.66, 87.01]. (Day 3's 1,000-trial noise-20 value was 86.0.)
+- **Hot pixels** (correct %): 5 100 · 10 99.99 · 20 99.83 [99.73, 99.89] · 40 98.11 [97.82, 98.36] · 80 80.54 [79.75, 81.30].
+- **Wrong answers: 0 / 220,000** (95 % upper bound 0.0017 %).
+- **Failure geography** (noise 20): fail 2.5 % at |galactic latitude| < 15° (mean 38.9 stars) vs 29.0 % at > 60° (18.2 stars).
+- **Figure fixes after viewing:** last star-count bin plotted at 130 (bin midpoint) → plot at the bin's mean; failure-map hex gaps and RA labels hidden
+  under the hexes → edge-coloured hexes + labels drawn on top with a halo; legend states "baseline 0".
+- Colab cleanup: runtime deleted; the notebook "Untitled1.ipynb" remains in the owner's private Drive. A generative-AI privacy notice popped up
+  once (mis-click); it was cancelled, nothing accepted. `notebooks/colab_run.ipynb` gained the campaign + download cells.
