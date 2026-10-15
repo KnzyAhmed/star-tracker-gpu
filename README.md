@@ -32,7 +32,7 @@ attitude ──► render ──► detect ──► identify ──────
 
 ## Why a GPU
 
-On one CPU core, a frame takes ~17 ms, and **render + detect are 87 % of it**: they touch all 1,048,576 pixels, while
+On one CPU core, a frame takes ~14 ms, and **render + detect are 88 % of it**: they touch all 1,048,576 pixels, while
 identification works on ~27 stars. That per-pixel work is what GPUs are built for:
 
 - `render.cu`: one thread per pixel per frame (block 16×16, grid 64×64×frames); each frame's star list is staged through shared
@@ -70,13 +70,13 @@ and 29 % near the galactic poles (18 stars). The vote needs enough real stars to
 ![benchmark](docs/results/day6/benchmark.png)
 
 Fair-comparison rules: the CPU code is vectorised NumPy running one process per core on an **Apple M1 Pro (8 performance + 2 efficiency
-cores)**, using its fastest noise generator; the GPU is a **Tesla T4 with a 70 W power limit** (Colab); timings use warm-up runs,
+cores, on AC power)**, using its fastest noise generator; the GPU is a **Tesla T4 with a 70 W power limit** (Colab); timings use warm-up runs,
 synchronise before stopping the clock, include CPU↔GPU transfers, and report medians.
 
-- Image stages (render + detect): **T4 0.32 ms/frame**, against 15 ms on one M1 Pro core (**47×**) and 2.3 ms on all 10 cores (**7.2×**).
-- **End to end, the T4 machine is *not* faster than the 10-core Mac** (3.0 vs 2.7 ms/frame). Once the GPU removes the image work,
+- Image stages (render + detect): **T4 0.32 ms/frame**, against 12.0 ms on one M1 Pro core (**37×**) and 1.85 ms on all 10 cores (**5.7×**).
+- **End to end, the T4 machine is *not* faster than the 10-core Mac** (3.0 vs 2.0 ms/frame). Once the GPU removes the image work,
   identification on Colab's 2 vCPUs is 84 % of the time (Amdahl's law). Pairing the T4 with more CPU cores for identification
-  is projected at ~0.75 ms/frame; that was not run as one system.
+  is projected at ~0.67 ms/frame (3× faster than the Mac alone); that was not run as one system.
 
 ## Validation
 

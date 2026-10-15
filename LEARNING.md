@@ -636,7 +636,8 @@ lower detection threshold with a better centroider (more faint stars detected, a
 per core. The GPU side runs batches of 128: prepare → pack + upload → render → detect + download → identify on CPU cores.
 
 **The fairness rules, and why each matters.**
-- *Best CPU code, all cores.* A GPU vs single-core comparison inflates the speed-up by the core count. Here: 47× vs 1 core, but only **7.2× vs 10 cores**.
+- *Best CPU code, all cores.* A GPU vs single-core comparison inflates the speed-up by the core count. Here: 37× vs 1 core, but only **5.7× vs 10 cores**.
+- *Plug in.* On battery the M1 Pro ran ~20 % slower (10-core render + detect 2.33 vs 1.85 ms), which would have flattered the GPU.
 - *Fastest CPU noise.* The GPU-matching counter noise is 2.3× slower on a CPU, so the baseline uses `rng.normal`.
 - *Warm up first.* The first GPU launch compiles kernels (NVRTC) and allocates memory. Two warm-up batches are discarded.
 - *Synchronise before stopping the clock.* GPU calls return immediately, and the work happens later. Without a synchronise you time the *launch*, not the work.
@@ -644,12 +645,12 @@ per core. The GPU side runs batches of 128: prepare → pack + upload → render
 - *Include transfers.* Upload of star lists and download of detections are counted. (Images never move, which is the design point.)
 - *Name the hardware.* Apple M1 Pro (8P + 2E cores); Tesla T4 70 W, driver 580.82.07; Colab host Xeon 2.0 GHz with 2 vCPUs.
 
-**Worked example: Amdahl's law with our numbers.** One M1 Pro core spends 14.7 ms on render + detect and 2.1 ms on everything else (16.8 ms total).
-Make render + detect infinitely fast and the frame still takes 2.1 ms: at best **8×**, however good the GPU is.
+**Worked example: Amdahl's law with our numbers.** One M1 Pro core spends 12.1 ms on render + detect and 1.6 ms on everything else (13.8 ms total).
+Make render + detect infinitely fast and the frame still takes 1.6 ms: at best 13.8 / 1.6 ≈ **8×**, however good the GPU is.
 On Colab the "everything else" (identify) runs on 2 slow vCPUs at 2.5 ms/frame. So the T4 pipeline (3.0 ms) is *slower* end to end than the
-10-core Mac (2.7 ms), even though its image stages are 7× faster.
+10-core Mac (2.0 ms), even though its image stages are 5.7× faster.
 
-**Interview question.** *"Your GPU kernel is 47× faster. Why is your end-to-end speed-up so much smaller?"*
-Answer: 47× is against one CPU core. The fair comparison (all cores) is 7×, and the end-to-end gain is capped by Amdahl's law: identification
+**Interview question.** *"Your GPU kernel is 37× faster. Why is your end-to-end speed-up so much smaller?"*
+Answer: 37× is against one CPU core. The fair comparison (all cores) is 5.7×, and the end-to-end gain is capped by Amdahl's law: identification
 stayed on the CPU, and on the 2-vCPU GPU host it became 84 % of the time. Next steps: run identify on more cores (or on the GPU), and overlap it
 with the GPU's next batch (pipelining), so the CPU and GPU work at the same time instead of taking turns.

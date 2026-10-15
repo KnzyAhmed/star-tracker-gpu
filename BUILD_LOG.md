@@ -330,3 +330,13 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   FINAL CPU numbers to be re-measured on AC power.
 - **Problem: `docs/results/` was git-ignored** (see the correction above). Fixed `.gitignore`; Day 5 artefacts committed in 9d5100c.
 - **README fact-check.** Corrected my own draft: 131 tests (not 126), render + detect = 87 % of a 1-core frame (not 89 %).
+
+### Day 6 final CPU benchmark (2026-10-15, AC power, Low Power Mode off): Apple M1 Pro 8P + 2E, 32 GB
+- 1 core stage medians (500 frames): prepare 0.215, render 7.225, detect 4.922, identify 1.421 ms (render + detect = 88 %).
+- Throughput (4,000 frames, 10 processes): render + detect **1.854 ms/frame**, full pipeline **1.999 ms/frame (500 frames/s)**;
+  1 process (1,000 frames): 11.968 / 13.351 ms.
+- Battery vs AC: battery was ~20 % slower (10-process render + detect 2.33 → 1.85 ms). The draft numbers are replaced everywhere.
+- **Final comparison:** T4 image stages 0.323 ms/frame incl. transfers → **37× vs 1 core, 5.7× vs all 10 cores**. End to end the
+  10-core Mac (2.00) beats the T4 + 2-vCPU host (3.03) by 1.5×: identify is 84 % of the GPU host's time (Amdahl). Projection with identify
+  on the Mac's 10 cores: 0.67 ms/frame (not run as one system; labelled as a projection).
+- Artefacts: `docs/results/day6/{benchmark.md, benchmark.png, cpu_m1pro.json, gpu_colab_t4.json}`; README updated.

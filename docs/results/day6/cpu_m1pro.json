@@ -1,0 +1,64 @@
+{
+ "host": {
+  "python": "3.12.15",
+  "platform": "macOS-27.0-arm64-arm-64bit",
+  "cores": 10,
+  "cpu": "Apple M1 Pro",
+  "cores_detail": "8 performance + 2 efficiency",
+  "power_source": "AC"
+ },
+ "device": "cpu",
+ "seed": 7,
+ "single_core_stages": {
+  "prepare": {
+   "median_ms": 0.2154789981432259,
+   "mean_ms": 0.21571291000873316,
+   "p99_ms": 0.45813416320015676
+  },
+  "render": {
+   "median_ms": 7.225416997243883,
+   "mean_ms": 7.2669052540150005,
+   "p99_ms": 8.154911577148596
+  },
+  "detect": {
+   "median_ms": 4.922437503410038,
+   "mean_ms": 4.947322493768297,
+   "p99_ms": 5.723551991686691
+  },
+  "identify": {
+   "median_ms": 1.420521002728492,
+   "mean_ms": 1.9604943301965247,
+   "p99_ms": 8.785193421281292
+  }
+ },
+ "throughput": [
+  {
+   "frames": 1000,
+   "workers": 1,
+   "full": false,
+   "seconds": 11.96795800000109,
+   "ms_per_frame": 11.96795800000109
+  },
+  {
+   "frames": 4000,
+   "workers": 10,
+   "full": false,
+   "seconds": 7.41795545900095,
+   "ms_per_frame": 1.8544888647502376
+  },
+  {
+   "frames": 1000,
+   "workers": 1,
+   "full": true,
+   "seconds": 13.351300959002401,
+   "ms_per_frame": 13.351300959002401
+  },
+  {
+   "frames": 4000,
+   "workers": 10,
+   "full": true,
+   "seconds": 7.995928958996956,
+   "ms_per_frame": 1.998982239749239
+  }
+ ]
+}
