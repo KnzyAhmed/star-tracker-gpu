@@ -625,3 +625,31 @@ Hot pixels 10 → 99.99; 20 → 99.83; 40 → 98.11; 80 → 80.54.
 Answer: give the vote more real stars. Use a fainter catalog limit with a more sensitive camera (more stars per field); widen the field of view; use a
 lower detection threshold with a better centroider (more faint stars detected, at the cost of more false dots); or use more distinctive patterns
 (triangles) so fewer stars are needed. Operationally, a spacecraft can also avoid pointing the tracker at the poles, or use two tracker heads.
+
+---
+
+## Day 6: benchmark and README
+
+### `experiments/benchmark.py`: a fair CPU vs GPU comparison
+
+**What it does.** It times the same skies through both pipelines. The CPU side runs on 1 core, stage by stage, then on all cores with one process
+per core. The GPU side runs batches of 128: prepare → pack + upload → render → detect + download → identify on CPU cores.
+
+**The fairness rules, and why each matters.**
+- *Best CPU code, all cores.* A GPU vs single-core comparison inflates the speed-up by the core count. Here: 47× vs 1 core, but only **7.2× vs 10 cores**.
+- *Fastest CPU noise.* The GPU-matching counter noise is 2.3× slower on a CPU, so the baseline uses `rng.normal`.
+- *Warm up first.* The first GPU launch compiles kernels (NVRTC) and allocates memory. Two warm-up batches are discarded.
+- *Synchronise before stopping the clock.* GPU calls return immediately, and the work happens later. Without a synchronise you time the *launch*, not the work.
+  CUDA events (`start.record() … end.synchronize()`) time the kernels themselves.
+- *Include transfers.* Upload of star lists and download of detections are counted. (Images never move, which is the design point.)
+- *Name the hardware.* Apple M1 Pro (8P + 2E cores); Tesla T4 70 W, driver 580.82.07; Colab host Xeon 2.0 GHz with 2 vCPUs.
+
+**Worked example: Amdahl's law with our numbers.** One M1 Pro core spends 14.7 ms on render + detect and 2.1 ms on everything else (16.8 ms total).
+Make render + detect infinitely fast and the frame still takes 2.1 ms: at best **8×**, however good the GPU is.
+On Colab the "everything else" (identify) runs on 2 slow vCPUs at 2.5 ms/frame. So the T4 pipeline (3.0 ms) is *slower* end to end than the
+10-core Mac (2.7 ms), even though its image stages are 7× faster.
+
+**Interview question.** *"Your GPU kernel is 47× faster. Why is your end-to-end speed-up so much smaller?"*
+Answer: 47× is against one CPU core. The fair comparison (all cores) is 7×, and the end-to-end gain is capped by Amdahl's law: identification
+stayed on the CPU, and on the 2-vCPU GPU host it became 84 % of the time. Next steps: run identify on more cores (or on the GPU), and overlap it
+with the GPU's next batch (pipelining), so the CPU and GPU work at the same time instead of taking turns.

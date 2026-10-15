@@ -314,3 +314,19 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 - `.gitignore` had `results/`, which ignores a `results` folder at ANY depth, so `docs/results/` was silently skipped by `git add -A`.
   Commit 91f819f's message (and my chat summary) wrongly said the figures were committed. Fixed by changing the rule to `/results/`
   (top-level raw data only) and committing `docs/results/` now. Lesson: after committing new artefacts, check `git ls-files`.
+
+## 2026-10-15: Day 6, benchmark + README
+
+- **Built.** `experiments/benchmark.py` (CPU: 1-core stage medians + all-core process pool with thread env vars set before spawn;
+  GPU: batches of 128, 2 warm-up batches, CUDA events + synchronise, transfers included, identify on a process pool),
+  `experiments/benchmark_report.py` (merged table + figure, projection labelled), `experiments/demo_figure.py` (README image),
+  `README.md`. Tests: `tests/test_benchmark.py` (3 smoke tests). Suite (Mac): **119 passed**, + 12 GPU-only tests = 131.
+- **Problem: thread env var set too late.** `OMP_NUM_THREADS=1` was set inside the workers after NumPy loaded (no effect) → now set before spawning.
+- **GPU run** (Colab T4 70 W, Xeon 2.0 GHz × 2 vCPU, private account): median ms/frame prepare 0.138, pack 0.004, render kernel 0.242,
+  detect + download 0.075, identify (2 processes) 2.535, total **3.028**; 2,560/2,560 solved. Colab single core: render 21.0, detect 8.0,
+  identify 2.8. JSON saved on the Mac by reading it off the page (no second download needed).
+- **CPU draft run on battery** (M1 Pro, 10 cores): 1 core render + detect 15.03, full 16.98 ms; 10 processes 2.33 / 2.72 ms.
+  T4 image stages: 47× vs 1 core, **7.2× vs 10 cores**. End to end the T4 host (3.03) is slower than the 10-core Mac (2.72): Amdahl.
+  FINAL CPU numbers to be re-measured on AC power.
+- **Problem: `docs/results/` was git-ignored** (see the correction above). Fixed `.gitignore`; Day 5 artefacts committed in 9d5100c.
+- **README fact-check.** Corrected my own draft: 131 tests (not 126), render + detect = 87 % of a 1-core frame (not 89 %).
