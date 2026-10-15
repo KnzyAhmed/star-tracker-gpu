@@ -309,3 +309,8 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   under the hexes → edge-coloured hexes + labels drawn on top with a halo; legend states "baseline 0".
 - Colab cleanup: runtime deleted; the notebook "Untitled1.ipynb" remains in the owner's private Drive. A generative-AI privacy notice popped up
   once (mis-click); it was cancelled, nothing accepted. `notebooks/colab_run.ipynb` gained the campaign + download cells.
+
+### Correction (2026-10-15): Day 5 figures were NOT in commit 91f819f
+- `.gitignore` had `results/`, which ignores a `results` folder at ANY depth, so `docs/results/` was silently skipped by `git add -A`.
+  Commit 91f819f's message (and my chat summary) wrongly said the figures were committed. Fixed by changing the rule to `/results/`
+  (top-level raw data only) and committing `docs/results/` now. Lesson: after committing new artefacts, check `git ls-files`.
