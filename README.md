@@ -1,5 +1,7 @@
 # Lost-in-space star tracker, validated on 220,000 simulated skies with CUDA
 
+[![tests and site](https://github.com/KnzyAhmed/star-tracker-gpu/actions/workflows/pages.yml/badge.svg)](https://github.com/KnzyAhmed/star-tracker-gpu/actions/workflows/pages.yml)
+
 A star tracker takes a photo of the stars and works out which way a spacecraft is pointing, with **no prior
 guess** ("lost in space"). This project builds one from scratch in Python and validates it with a Monte Carlo campaign
 over 220,000 simulated skies. The image-heavy stages run as hand-written CUDA kernels on a GPU.
