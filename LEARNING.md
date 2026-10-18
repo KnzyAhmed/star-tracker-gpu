@@ -809,3 +809,59 @@ far inside the disc, and the horizon fit would then see a smaller Earth and repo
 Answer: no, the attitude comes from the stars (the Phase 1 tracker), which does not need Earth. The attitude is used for two things here:
 to know which side of the disc is lit, and later to turn each limb pixel into a world-frame direction. If the attitude is wrong by δ, the
 limb directions rotate rigidly by δ; the fitted *range* (from the apparent size) is unaffected, only the position's direction is.
+
+## Day 10: horizon fit → position
+
+### `fit_horizon_sphere(d, R)`, `fit_horizon_ellipsoid(d, a, c)` (`tracker/opnav.py`)
+
+**What they do.** Turn the limb pixels into world directions d_i (via `unproject` and the attitude) and find the one position
+p from which all of them are tangent to Earth.
+
+**Why the fit is linear.** For a sphere of radius R at the origin, every limb ray makes the same angle ρ with the direction to the
+centre e: d_i·e = cos ρ. Write n = e/cos ρ: then **d_i·n = 1** for every i, which is linear in the three unknowns of n. Ordinary
+least squares gives n; its length carries the range: |n| = 1/cos ρ, so sin ρ = √(n·n − 1)/|n| and |p| = R/sin ρ, hence
+p = −R n / √(n·n − 1). No initial guess, no iteration, and a short arc works as well as a full circle (given exact points).
+
+**Worked example by hand.** GEO: ρ = 8.70°, cos ρ = 0.98849, so a perfect fit returns |n| = 1.01164, n·n − 1 = 0.02342,
+√ = 0.15304, and |p| = 6378.137/0.15304 = **41,676 km?** No: |p| = R |n|/√(n·n − 1) = 6378.137 × 1.01164/0.15304 = **42,164 km**. ✓
+(The first expression forgot the |n| factor: a mistake worth making once on paper.)
+
+**The ellipsoid by scaling.** Scale space with S = diag(1/a, 1/a, 1/c); the WGS84 ellipsoid becomes the unit sphere, and a line
+tangent to the ellipsoid becomes a line tangent to the unit sphere. So: scale the directions, renormalise, fit the unit-sphere problem,
+unscale the answer (p = S⁻¹ p'). Exact recovery to 1e-9 in the tests.
+
+**Why oblateness matters (hand calculation).** Seen from the equatorial plane the silhouette is an ellipse with semi-axes a = 6378.1 and
+≈ c = 6356.8 km. A sphere of radius a fitted to the whole limb sees roughly the mean radius 6367.4 km, so it puts the camera
+a/6367.4 − 1 = **+0.17 % too far: +71 km at GEO, +645 km at lunar distance** (the fit gives 71 and 645). From the pole the bias is small but
+not zero at finite distance: the tangent circle sits at z = c²/D = 958 km with radius 6305 km, tan ρ = 6305/41,206, and the sphere
+model returns 42,167 km: **+3.4 km** (fit: 3.2). My first expectation was "exactly zero from the pole", which is only true from infinity.
+
+**Robustness.** Fit, drop points whose residual |d_i·n − 1| exceeds the median + 4 × 1.4826·MAD, refit (≤ 5 rounds). Six wild points
+among 180 move the answer by < 5 km instead of > 50 km.
+
+### How limb bias becomes position error (measured, Day 10, true attitude, sphere model)
+
+| case | arc | median limb bias | range error | cross-range | hand estimate −Δr/r |
+|---|---|---|---|---|---|
+| GEO, phase 0 | 358° | −0.71 px (−0.76..−0.69) | **+65.5 km, +0.155 %** | 0 | +67 km, +0.160 % |
+| GEO, phase 90 | 100° | +0.03 px | +1.6 km, +0.004 % | 0.8 km | −3 km |
+| lunar, phase 90 | 97° | +0.12 px (+0.03..+0.19) | **+1,507 km, +0.39 %** | 44 km, 0.011 % | −937 km, −0.24 % |
+| lunar, phase 135 (crescent) | 60° | +0.74 px (+0.47..+0.96) | **+22,355 km, +5.8 %** | 489 km, 0.13 % | −5,917 km, −1.5 % |
+
+**When the hand rule works.** A *uniform* bias on a *full* circle just changes the apparent radius: ΔD/D = −Δr/r. GEO phase 0:
+−0.71/444.35 = −0.160 % → the camera seems 0.160 % farther; the fit says +0.155 %. ✓
+
+**When it fails, and why the sign flips.** On a short arc the fit cannot measure the radius from the arc's size (the centre is free to move);
+it measures it from the arc's **curvature**, i.e. from the sagitta. The lunar crescent arc is 60° of a 48.2 px circle: chord 48.2 px,
+sagitta R(1 − cos 30°) = 6.46 px. The bias is +0.47 px at the ends but +0.96 px in the middle, so relative to a uniform shift the middle
+bulges out by 0.49 px: the sagitta becomes 6.95 px while the chord stays. Radius from chord and sagitta: r = (chord²/4 + s²)/(2s) =
+(580.6 + 48.3)/13.9 = **45.2 px instead of 48.2**: 6.1 % *smaller*, so the camera appears **6.5 % farther**: the fit says +5.8 %.
+The uniform-inflation hand rule predicted −1.5 % (closer): wrong sign and a quarter of the size. The lever is brutal: a half-pixel
+sagitta error on a 6.5 px sagitta is 7.5 %. Part of the bias is absorbed by moving the centre along the Sun direction, which is the
+489 km (0.13 %, 3.7 px) of cross-range error.
+
+**Interview question.** *"Your limb points are good to 0.7 px. Why is your lunar-distance range 6 % wrong?"*
+Answer: because at lunar distance Earth is 48 px across and only a 60° arc is lit and sharp. On a short arc the range comes from the
+arc's curvature, and a bias that is uneven along the arc (bigger in the middle, where the crescent is widest) changes the sagitta by half a
+pixel out of 6.5. Position error from a horizon sensor scales like (limb error / pixel radius) × a geometric amplification that grows
+as the arc shortens; the fix is an unbiased edge model, not more points.

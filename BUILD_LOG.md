@@ -457,3 +457,31 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   only the lit half is bright; one noise false alarm out of 17 detections failed a 95 % rule → "at most one".
 - **Tests.** `tests/test_limb.py`: 9. Suite: **163 passed**.
 - **Day 9 gate:** `docs/results/day9/limb_grid.png` (limb points on three noisy frames + radial errors) ready for review.
+
+## 2026-10-18: Day 10, horizon fit → position
+
+### `tracker/opnav.py`: `limb_directions`, `fit_horizon_sphere`, `fit_horizon_ellipsoid`, `position_error`, `position_from_image`, `attitude_second_head`
+- **Built.** Linear least squares for n in d·n = 1, p = −R n/√(n·n − 1); ellipsoid by scaling space; MAD outlier rejection (k = 4,
+  ≤ 5 rounds); `position_error` → (total, signed range, cross-range) km; `position_from_image` = find_limb → directions → fit, None when
+  < 20 points or the fit is inconsistent (|n| ≤ 1); configuration (b) second head: A_est = Mᵀ A_head_est (10″/60″ in the test).
+- **Measured.** Exact recovery (1e-9) for sphere and ellipsoid at GEO/100k/lunar and on a 60° arc. Sphere model on an oblate Earth,
+  full limb from the equator: +71 km at GEO, +645 km at lunar (+0.17 %); from the pole +3.2 km (hand: +3.4). The plan's "66 km at GEO for a
+  random direction" is consistent (it depends on the viewing latitude). Noise 0.3 px: error ratio 20 vs 180 points ≈ 3 (1/√n).
+  End to end, GEO phase 90, noisy, true attitude: range +1.0 km (0.002 %), cross 0.7 km.
+- **Problems.** Two expectations of mine: a 10 µm difference failed rtol with no atol; "zero bias from the pole" is only true from infinity.
+- **Tests.** `tests/test_opnav.py`: 14. Suite: **177 passed**.
+
+### Limb bias → position error (`experiments/day10_bias.py` → `docs/results/day10/bias_table.md`)
+- Real fit on the Day 9 frames (sphere Earth, stars, noise; also noise-free twins), TRUE attitude, sphere model. Noise changes nothing
+  at the 1-km level: these are biases, not noise.
+- GEO phase 0 (full circle, uniform −0.71 px): range **+65.5 km (+0.155 %)**, cross 0; hand estimate −Δr/r = +67 km. Rule confirmed.
+- Lunar phase 135 (60° arc, +0.47..+0.96 px, biggest in the middle): range **+22,355 km (+5.8 %)**, cross 489 km (0.13 %); the hand
+  estimate says −5,917 km (−1.5 %): wrong sign, ¼ the size. Explained by curvature: the uneven bias adds 0.49 px to a 6.46 px sagitta →
+  apparent radius 45.2 px instead of 48.2 → 6.5 % farther. Lunar phase 90 (97° arc, +0.03..+0.19 px): +1,507 km (+0.39 %), same mechanism.
+- 100,000 km off-axis (median bias −0.03 px but uneven −0.13..+0.03): +87 km (+0.09 %), cross 5 km.
+- **The lunar range error exceeds 1 %, so I stopped here and proposed a fix (below) instead of applying it.**
+- **Proposed fix (awaiting approval):** replace the 50 %-of-plateau crossing by fitting, per scan line, the *predicted* blurred edge
+  profile: Lambertian shading along the line (known from the geometry and the Sun direction) × disc coverage, convolved with the
+  Gaussian PSF (σ = 1.2 px), with the edge position and a brightness scale as the two free parameters. This removes the phase-dependent
+  bias (fading limb at phase 0, thin crescents) at its source, keeps the same scan lines, and can be tested against the noise-free renders
+  to 0.05 px. Cost: a small nonlinear fit per line (~180 per frame, each a 1-D search over ~0.1 px steps or a Gauss–Newton on 2 parameters).
