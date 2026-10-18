@@ -397,3 +397,37 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   (`display: contents` on phones to reorder: title, globe, panel, image, solve). (2) Phone overflow to 405 px: the desktop
   `align-items: start` leaked into the phone flex column, so `.solve` sized to its content → `align-items: stretch` in the media query.
   Both found by measuring element rects with JS in a 390-px iframe. Final: 390 px, all boxes 358 px.
+
+# Phase 2: optical navigation
+
+## 2026-10-18: docs rewritten in the first person
+- Rewrote the "owner" wording in BUILD_LOG.md and LEARNING.md into the first person as the phase rules require, and removed the
+  personal account details (e-mail addresses, a browser-connection name) that had crept into this public log.
+
+## 2026-10-18: Day 8, geometry + Earth renderer (CPU reference)
+
+### `tracker/world.py`
+- **Built.** WGS84 radii with source, `EARTH_LEVEL = 3000` counts (assumption documented), `sample_position` (log-uniform distance,
+  uniform direction), `sample_sun`, `earth_in_view` (overlap test of the disc's box with the sensor; raises inside Earth).
+- **Correction to the plan.** The GEO sanity value is 8.70°, not 8.69° (arcsin(6378.137/42164) = 8.7005°); 444.4 px. Lunar: 0.951°, 48.2 px.
+- **Tests.** `tests/test_world.py`: 10 (constants, log-uniform quartiles, uniform directions, sanity values, off-axis, partial, inside-Earth error).
+
+### `tracker/earth_render.py`: `render_earth`, `occluded`, `render_scene`
+- **Built.** Bounding box from `earth_in_view` (stretched 1/cos² off-axis, +6 px halo), 4 × 4 sub-rays per pixel via `unproject`,
+  ray–ellipsoid in scaled space, true ellipsoid normals, Lambertian, average, `gaussian_filter` with SIGMA_PSF. `shade=False` draws a
+  flat disc for geometry tests. Mask = any sub-ray hit. Occlusion by the same ray test.
+- **Measured.** Edge of the flat disc: 50 % crossing 0.12 px inside the geometric limb at 4 × 4 (edge quantisation 1/8 px), within
+  0.08 px at 8 × 8. Oblate Earth from the equator: 1.5 px shorter than wide at GEO, as predicted. Full-phase shading at r = 0.5 R: 0.899
+  (finite-distance formula), centre = EARTH_LEVEL within 1 %. Flux ratios at GEO vs an independent surface integral: within 1 %;
+  half/full = 0.26 (1/π = 0.318 only in the orthographic limit; lunar distance gives 1/π within 1.2 %).
+  Render time on the M1 Pro: GEO 1.5 s, 100,000 km 0.3 s, lunar 0.04 s per frame.
+- **Problems.** (1) Four of my first test expectations were orthographic-camera results (sqrt(1 − (r/R)²) shading, Lambert phase law)
+  and a too-tight 0.1 px edge tolerance at 4 × 4; the renderer was right each time, so I fixed the expectations and documented the finite-distance
+  maths. (2) The occlusion test had no star behind a 48 px Earth; it now puts Earth in front of Betelgeuse from GEO.
+- **Design note for Day 9.** The plan's "outermost crossing of 50 % of the line's peak" would bias the limb inward at low phase angles
+  (Lambertian fade-out); use a low fixed threshold or the gradient instead.
+- **Tests.** `tests/test_earth_render.py`: 13. Suite: **151 passed** (22 s of it is this file: GEO renders at 4 × 4 and 8 × 8).
+
+### Day 8 gate: `experiments/show_earth.py` → `docs/results/day8/earth_grid.png`, `earth_geo_phase90.png`
+- 3 distances × 3 phases with the real star field, occlusion and noise. Lit fractions 1.00 / 0.49 / 0.09–0.15; stars in view 9 (GEO, most
+  hidden or outside), 17, 18. Images look right: sharp limb, soft terminator, thin crescents, hidden stars. **Gate: images ready for review.**

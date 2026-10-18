@@ -683,3 +683,78 @@ same code natively. WebAssembly NumPy is ~25× slower here, and still interactiv
 **Interview question.** *"Your demo runs in the browser. How do you know it does the same thing as your tested code?"*
 Answer: it *is* the tested code. The build script copies the same `tracker/*.py` files into the site, and Pyodide runs them unchanged. A test builds the
 bundle and runs it in an isolated Python process, and the page's Python entry point (`bridge.py`) has its own unit tests.
+
+---
+
+# Phase 2: optical navigation
+
+## Day 8: geometry and the Earth renderer
+
+### Why stars alone can't give position
+Stars are so far away that moving the camera does not move them in the image. The nearest star (Proxima, 1.3 pc) shifts by only
+~0.002″ when I move by the Earth–Moon distance, far below the ~1″ I can measure. Stars give *attitude* (which way I face); to learn
+*where* I am I need something nearby whose apparent size and direction change with my position: Earth.
+
+### `world.py`: `sample_position`, `sample_sun`, `earth_in_view` (`tracker/world.py`)
+
+**What they do.** `sample_position(rng, r_min, r_max)` gives a spacecraft position: direction uniform on the sphere, distance
+log-uniform. `sample_sun(rng)` gives a Sun direction uniform on the sphere. `earth_in_view(p, A)` says whether Earth's disc
+overlaps the sensor and returns its centre pixel, apparent angular radius ρ = arcsin(R/|p|) and on-axis pixel radius F·tan ρ.
+
+**IN / OUT.** p (3,) km, world frame = J2000 equatorial with Earth's centre at the origin; A (3, 3) sky → camera.
+OUT of `earth_in_view`: `(visible, (u, v), rho [rad], pixel_radius [px])`.
+
+**Worked example.** GEO: |p| = 42,164 km, R = 6378.137 km. ρ = arcsin(6378.137 / 42164) = arcsin(0.15127) = 0.15185 rad = **8.70°**.
+Pixel radius = 2903.7 · tan(0.15185) = 2903.7 · 0.15303 = **444.4 px**: Earth nearly fills the 20° field (the diameter is 17.4°).
+Lunar distance: ρ = arcsin(6378.137 / 384,400) = **0.951°**, 48.2 px. (The plan quoted 8.69°; the exact value is 8.70°, and I corrected the test.)
+
+**Why log-uniform distance.** The apparent size falls like 1/distance, so what matters is the *ratio* of distances. Log-uniform
+puts as many trials between 50,000 and 100,000 km as between 200,000 and 400,000 km. A uniform distance would spend almost all
+trials far away, where Earth is a tiny disc, and barely test the near field.
+
+**Interview question.** *"Why is the pixel radius F·tan ρ and not F·sin ρ or F·ρ?"*
+Answer: the pinhole maps a direction at angle θ from the boresight to F·tan θ. The limb is at angle ρ from Earth's centre direction,
+so on-axis its image is a circle of radius F·tan ρ. Off-axis the disc becomes an ellipse stretched by 1/cos² of the off-axis angle.
+F·ρ is the small-angle approximation (0.4 % low at GEO), and F·sin ρ belongs to an orthographic projection, not a pinhole.
+
+### `render_earth(p, A, s, a, c, supersample, brightness, shade)` (`tracker/earth_render.py`)
+
+**What it does.** For every pixel in the disc's bounding box it casts 4 × 4 sub-pixel rays, intersects each with the ellipsoid,
+shades the hit point Lambertian (max(0, n·s)), averages the sub-rays and blurs with the same σ = 1.2 px PSF as the stars.
+
+**The ray–ellipsoid trick.** Scale space by S = diag(1/a, 1/a, 1/c): the ellipsoid x²/a² + y²/a² + z²/c² = 1 becomes the unit sphere.
+With p' = S p and d' = S d the ray is p' + t d' and the sphere condition |p' + t d'|² = 1 is a quadratic in t:
+(d'·d') t² + 2 (p'·d') t + (p'·p' − 1) = 0. Discriminant < 0 means a miss. The nearest hit is the smaller root.
+The surface normal is the gradient of the ellipsoid function, n ∝ (x/a², y/a², z/c²), normalised: on the ellipsoid it is NOT the
+direction from the centre (that is the first mistake everybody makes).
+
+**Worked example by hand (hit test).** Sphere a = c = R = 6378.137, camera at p = (42164, 0, 0), ray straight at the centre d = (−1, 0, 0).
+Scaled: p' = (6.611, 0, 0), d' = (−0.1568, 0, 0). Quadratic: 0.02458 t² − 2.0732 t + 42.70 = 0 → discriminant 4.298 − 4.198 = 0.100,
+t = (2.0732 − 0.316)/(2 · 0.02458) = **35,786 km**, which is 42,164 − 6,378: the ray hits the sub-camera point. ✓
+
+**Two things the tests taught me (my first expectations were wrong).**
+1. *Shading is not the orthographic sqrt(1 − (r/R)²).* From GEO (D/R = 6.6) the camera sees normals only within 81.3° of the
+   sub-camera point, so at half the disc radius the brightness is **0.899**, not 0.866. By hand: tan β = 222/2904 → β = 0.0765 rad;
+   t = D cos β − sqrt(R² − D² sin² β) = 42,042 − 5,505 = 36,537; n·s = (D − t cos β)/R = (42,164 − 36,431)/6,378 = 0.899.
+2. *The Lambert phase law is also an orthographic result.* At GEO the half-phase to full-phase flux ratio is **0.26**, not 1/π = 0.318,
+   because the 8.7° rim the finite camera cannot see contains the brightest part of the half-lit disc (near the lit limb n·s → 1).
+   I checked the renderer against an independent surface integral (within 1 %) and against 1/π from lunar distance (D/R = 60), where it holds.
+
+**Why supersample.** One ray per pixel gives a jagged edge whose position is quantised to a whole pixel. With n × n sub-rays the
+coverage of an edge pixel is estimated to 1/n² and the edge position to ~1/(2n) px: 0.125 px at 4 × 4 (measured 0.12 px bias in the
+50 % crossing), 0.06 px at 8 × 8. The horizon fit later needs the limb to ~0.1 px, so 4 × 4 is the minimum, and the limb detector should
+not trust a single pixel row.
+
+**A note for Day 9.** At phase 0 the Lambertian limb fades to zero brightness, so "50 % of the line's peak" would find the edge at
+0.87 R, not at the limb. The limb detector must use a low fixed threshold (a few σ above background; the brightness is still 420 counts
+at 0.99 R) or the gradient, not a fraction of the peak.
+
+**Interview question.** *"Your Earth is 444 px across and renders in 1.5 s on the CPU. Where does the time go and what would you do on a GPU?"*
+Answer: 900 × 900 box × 16 sub-rays = 13 million ray–ellipsoid tests plus the normal and shading maths, each independent of the others:
+an ideal GPU workload (one thread per pixel, 16 rays per thread). The star renderer took 8 ms because stars touch a few hundred pixels
+each; Earth touches 600,000 pixels. That is why Day 11 moves this kernel to CUDA.
+
+### `occluded(p, r)` and `render_scene(...)`
+A star in direction r is hidden if the ray from p along r hits the ellipsoid: the same quadratic with d = r. `render_scene` removes those
+stars, adds the star image (with background and noise), then the Earth image. Hand check: from p = (100,000, 0, 0), ρ = 3.66°; a star
+3.58° (0.98 ρ) from the anti-Earth direction is hidden, one at 3.73° (1.02 ρ) is not.
