@@ -905,3 +905,41 @@ Answer: a lookup table would be right only for the conditions it was built for: 
 The profile fit derives the correction from the physics each time: change the exposure, the PSF width, the Sun angle or the shape of the
 disc and it still finds the edge, and when the picture does not match the model (e.g. clouds, limb brightening) the residual tells me so.
 It costs ~180 tiny two-parameter fits per frame, a few tens of milliseconds.
+
+## Day 11: Earth on the GPU
+
+### `earth.cu` / `gpu.render_earth_batch` (`tracker/kernels/earth.cu`, `tracker/gpu.py`)
+
+**What it does.** The Earth renderer as a CUDA kernel: one thread per pixel of the disc's bounding box, 4 × 4 sub-rays per thread,
+the same ray–ellipsoid quadratic in scaled space, the same ellipsoid normal and Lambertian term, averaged and written as float32.
+The bounding box is computed on the host (`earth_render.earth_bbox`, shared with the CPU renderer), so both draw exactly the same
+pixels; the PSF blur is applied afterwards with `cupyx.scipy.ndimage.gaussian_filter`, the GPU twin of the CPU's SciPy call.
+
+**IN / OUT.** positions (F, 3) km, attitudes (F, 3, 3), suns (F, 3) → images (F, 1024, 1024) float32 and masks (F, 1024, 1024) bool,
+both CuPy arrays that stay on the GPU. One launch per frame over its own box (16 × 16 threads per block).
+
+**Why the geometry is in double, unlike the star kernel.** The limb is a hit/miss decision: a sub-ray either hits the ellipsoid or
+not, and one flipped sub-ray changes a pixel by brightness/16 ≈ 190 counts before blurring. The quadratic's discriminant is a
+difference of two nearly equal numbers built from |p| ~ 10⁴–10⁶ km, so in float32 (7 digits) a few edge sub-rays per 13 million
+would flip relative to the CPU's float64, and the "equals the CPU" gate would fail at those pixels. In double the two renderers
+agree to one float32 rounding step. The T4 does double at 1/32 of its float32 rate, which is still ~250 GFLOP/s: a GEO frame
+(13 M rays) renders in a few milliseconds. The stars kernel stays float32 because blobs are smooth: no decision, no cliff.
+
+**Measured on the Tesla T4 (Colab).** GEO phase 90 off-axis, 100,000 km off-axis with an oblique Sun, lunar crescent, all WGS84:
+max |GPU − CPU| 7.3 × 10⁻⁴ counts (= 1 ulp of a 3,000-count float32), masks identical, `find_limb` returns 180 points on both images
+within 4.4 × 10⁻⁷ px. 128 Earth-pointing frames from GEO to lunar distance: **0.52 s = 4.1 ms per frame** including the blur,
+against 3.2 s (Colab CPU) or 1.5 s (M1 Pro) for a single GEO frame on the CPU.
+
+**Worked example (why the GPU earns its place again).** Day 12 wants 12 distances × 4 phases × 2 noise levels × 1,000 trials =
+96,000 frames. On the M1 Pro at ~0.5 s per frame (the log-uniform mix of sizes) that is 13 hours; at 4.1 ms per frame on the T4 it is
+7 minutes. The stars took 8 ms on the CPU because each touches ~100 pixels; Earth near GEO touches 600,000 pixels × 16 rays.
+
+**A lesson from the first run.** `tests/test_gpu.py` had a missing import that the Mac never saw, because the module skips at
+`importorskip("cupy")` before reaching it. GPU-only test files cannot be exercised locally beyond that skip, so I now check them
+for undefined names with a small AST walk before shipping a zip to Colab.
+
+**Interview question.** *"Your star kernel is float32 but your Earth kernel is float64. Why not pick one?"*
+Answer: precision is a per-kernel decision driven by the maths. Star blobs are smooth Gaussians: float32 rounding moves a pixel by
+10⁻⁷ relative, invisible. The Earth limb is a discontinuity decided by a cancelling discriminant at 10⁵ km scale: float32 flips edge
+rays, each flip is a 190-count jump, and the CPU-match gate fails. Doubles there cost milliseconds on a T4. Mixed precision, chosen
+where it matters, is the normal engineering answer.

@@ -498,3 +498,19 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   +122 km (+0.03 %) noisy; cross-range 489 → 11 km. All below the 1 % bar; the worst case is now lunar phase 90 at 0.09 %.
 - **Tests.** `tests/test_limb.py` +7 (bias removed at 4 phase/distance cases, even along the arc, with noise, end-to-end < 0.3 % and
   better than the old rule). Suite: **184 passed**.
+
+## 2026-10-18: Day 11, Earth on the GPU
+
+- **Built.** `earth_render.earth_bbox` + `subpixel_offsets` factored out (CPU renderer unchanged, same tests pass); `kernels/earth.cu`
+  (one thread per bbox pixel, 4 × 4 sub-rays, double-precision ray–ellipsoid + true normal + Lambertian, float32 out, uint8 mask);
+  `gpu.render_earth_batch` (per-frame launch over the host bbox, cupyx `gaussian_filter` blur, bool masks). `tools/cuda_shim.h` learned
+  `sqrt(double)`. `experiments/gpu_check.py --earth` for agreement + timing.
+- **Decision: double precision for the Earth geometry** (stars stay float32): the limb is a hit/miss cliff and |p| ~ 10⁵ km makes the
+  float32 discriminant cancel; one flipped sub-ray = brightness/16 in a pixel. Doubles cost milliseconds on the T4.
+- **Gate on the T4 (Colab, private account):** full suite **196 passed, 4 skipped** (clang checks) after one fix; GPU vs CPU Earth:
+  max |Δ| 7.3e-4 counts (GEO, 100k), 2.4e-4 (lunar), masks identical, limb points 180/180 within 4.4e-7 px. Timing: 128 Earth-pointing
+  frames GEO–lunar (median 153,585 km) in 0.52 s = **4.07 ms/frame** incl. blur; CPU GEO frame 3.2 s (Colab Xeon) / 1.5 s (M1 Pro).
+- **Problems.** (1) `test_gpu.py` lacked an import; invisible on the Mac (skips at importorskip) → fixed, plus an AST undefined-name check
+  before zipping. (2) `test_opnav` exactness tolerance 1e-6 km failed on x86 by 1.5e-6 km (lstsq rounding) → 1e-4 km (10 cm).
+  (3) Colab's session-files warning dialog swallowed a typed cell once; Escape does not close it, OK does.
+- Suite (Mac): **185 passed**, 1 skipped; with CUDA: 196 passed.
