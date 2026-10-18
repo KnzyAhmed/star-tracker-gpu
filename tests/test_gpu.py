@@ -7,7 +7,7 @@ cp = pytest.importorskip("cupy")
 
 from tracker import gpu                                     # noqa: E402
 from tracker.batch import pack_frames, project_frames        # noqa: E402
-from tracker.camera import random_attitude                   # noqa: E402
+from tracker.camera import attitude_from_pointing, random_attitude   # noqa: E402
 from tracker.catalog import load_catalog                     # noqa: E402
 from tracker.render_cpu import BACKGROUND, READ_NOISE, render  # noqa: E402
 
