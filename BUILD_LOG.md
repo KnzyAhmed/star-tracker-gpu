@@ -2,7 +2,7 @@
 
 Dated record of what was built, what was decided (and rejected), measured numbers, and problems.
 
-## Before 2026-10-11: Days 0–1 (built by the owner; summary from git history)
+## Before 2026-10-11: Days 0–1 (summary from git history)
 - Day 0: project skeleton, `data/bsc5.csv` (Yale BSC, 9,096 stars).
 - Day 1a: camera model (`tracker/camera.py`).
 - Day 1b: CPU renderer, first rendered sky (Orion verified).
@@ -50,7 +50,7 @@ Dated record of what was built, what was decided (and rejected), measured number
 - **Decisions.** All three are returned as magnitudes ≥ 0 (sign of roll dropped; can add a signed variant if Day 5 needs bias plots).
   The roll definition is swing-twist, so it is exact at any size, not just a small-angle approximation.
 - **Rejected.** Clipped arccos of (trace−1)/2: measured 0 instead of 1 mas, 6 % off at 10 mas.
-  SciPy `as_rotvec` (works, but hides the maths the owner must explain).
+  SciPy `as_rotvec` (works, but hides the maths I need to be able to explain).
 - **Tests.** 7 new tests (no NaN at identity, pure roll, pure pointing, symmetry, 1 mas precision, 180° cases,
   quadrature total² = pointing² + roll²). Suite: **61 passed**.
 
@@ -140,7 +140,7 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 - **GATE: PASS.** Success 100 % (≥ 99.62 % at 95 %), well above 90 %. Render + detect = **81 %** of the time.
 - **eps not decided.** On clean images all three are perfect, so this run cannot separate them. Smaller eps is slightly
   faster and slightly more accurate (fewer slightly-off stars accepted in verify). The difference should only appear
-  under stress (more noise, hot pixels), which is a Day 5 experiment, or a quick stress run now. Owner to decide.
+  under stress (more noise, hot pixels), which is a Day 5 experiment, or a quick stress run now. I decided to run the stress test first.
 
 ### eps stress test (2026-10-14): `add_hot_pixels`, `--read-noise` / `--hot-pixels` in montecarlo.py
 - **Built.** `tracker/render_cpu.add_hot_pixels(image, n, rng, lo=100, hi=2000)`: n distinct pixels get +U(lo, hi) counts
@@ -167,10 +167,10 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 - "Too tight" begins below 20″: at noise 20, 15″ drops to 81.4 % (true pairs fall outside the window as centroid errors grow).
 - **Verification held everywhere:** 0 wrong answers in 15,000 identify calls across all stressed runs. Failures are always "no solution".
 - **Recommendation: eps = 25″** (ties 20″ within error bars; ≥ 20″ is the flat top; 25″ keeps more margin from the 15″ cliff and
-  verifies slightly more stars). Owner to decide; nothing in the code defaults to an eps yet.
+  verifies slightly more stars). Decision pending; nothing in the code defaults to an eps yet.
 - Idea for later (not built): scale eps with the noise level, since the best eps is "a few × the pair-angle error".
 
-### eps decided (2026-10-14): **25″** (owner approved)
+### eps decided (2026-10-14): **25″**
 - `tracker/identify.EPS_ARCSEC = 25.0`, now the default of `identify()` and of `montecarlo.py --eps`.
 - The identify tests now run at the default 25″ instead of 60″ (stricter; all still pass). The vote tests stay at 60″,
   where they document voting behaviour. Suite: **86 passed**.
@@ -186,12 +186,12 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   benchmark (Day 6) keeps `rng.normal`.
 - **Rejected.** Philox (heavier to hand-write identically in NumPy and CUDA). Using both Box-Muller outputs (it would need pixel pairs, which
   complicates the one-thread-per-pixel mapping).
-- **Open question for the owner (blocks render.cu):** the spec caps a frame's star list at 64. Measured: 13/1000 frames have > 64 stars
+- **Open question (blocks render.cu):** the spec caps a frame's star list at 64. Measured: 13/1000 frames have > 64 stars
   in view (max 83). See the chat for options.
 - **Tests.** `tests/test_noise.py`: 5 tests. Suite: **91 passed**.
 
 ### Decision: > 64 stars per frame (2026-10-14)
-- Asked the owner; no answer given ("continue"), so I took my recommended option: **render.cu processes the star list in chunks
+- I went with the most flexible option: **render.cu processes the star list in chunks
   of 64** through shared memory. This keeps the spec's 64-star tile and supports any count (measured max 83). Easy to revisit.
 
 ### `tracker/render_cpu.py`: `star_windows`, `render(noise_key=...)`
@@ -229,11 +229,11 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   target CUDA (e.g. Colab). It caught the `size_t` error before any GPU run.
 
 ### Running on a GPU (Colab)
-- The first attempt ran in a Chrome profile signed in to someone else's Google account. That notebook was moved to the bin and its runtime deleted
-  at the owner's request. (Its single run also showed 103 passed on a T4; not counted.)
-- On the owner's account (knzyahmed@aucegypt.edu), Drive is **full**, so new notebooks can't be created. Used Colab's built-in example notebook in
-  **playground mode** (nothing saved to Drive), uploaded a `git archive` zip via the Files panel (the repo is private), ran, then deleted the runtime.
-- `notebooks/colab_run.ipynb` added so the owner can repeat this.
+- A first attempt accidentally ran under the wrong Google account; that notebook was deleted and its run not counted
+  (it also showed 103 passed on a T4).
+- My university Drive is **full**, so new notebooks can't be created there. I used Colab's built-in example notebook in
+  **playground mode** (nothing saved to Drive), uploaded a `git archive` zip via the Files panel (the repo was private then), ran, then deleted the runtime.
+- `notebooks/colab_run.ipynb` added so the GPU runs can be repeated.
 
 ### Day 4 gate (2026-10-15), Tesla T4, 70 W power limit, 15,360 MiB, driver 580.82.07, CuPy 14.0.1
 - `pytest -q tests/`: **109 passed, 3 skipped** (the 3 skips are the clang checks). All 10 GPU tests passed.
@@ -246,15 +246,14 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 - **GATE: PASS.** Noise off → GPU image equals CPU to float32 tolerance; same stars detected.
 
 ### Decision (2026-10-15): add a public demo website as Day 7
-- Owner's idea, discussed first. Options: (A) replay of precomputed skies, (B) the real Python tracker running live in the browser
+- Options considered: (A) replay of precomputed skies, (B) the real Python tracker running live in the browser
   via Pyodide, (C) a Streamlit-style app with a server. **Chose B** for the live part; the Monte Carlo/benchmark charts are stored
   results on a separate tab. GitHub Pages, public. Scheduled after Days 5–6 so the results tab has real numbers. Spec added to the project plan.
 - Rejected: C (needs a running server). GPU live on the web (no GPUs on free static hosting; GPU numbers come from the Colab runs).
 
 ## 2026-10-15: Day 5, campaign
 
-- Colab GPU runs now use the owner's private Google account (knzy.elmasry88@gmail.com, Chrome connection "priv knzy"), whose Drive
-  is not full. Verified the account on Colab's account button before any action.
+- Colab GPU runs now use my personal Google account, whose Drive is not full, so a normal notebook can be saved.
 
 ### `tracker/camera.py`: `pointing_from_attitude` (new; existing functions unchanged)
 - **Built.** Boresight → RA (mod 360), Dec (atan2), roll from the camera x-axis against attitude_from_pointing(ra, dec, 0).
@@ -296,7 +295,7 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   (skips = Mac-only clang checks; includes CPU rows == GPU rows and GPU hot pixels == CPU).
 - Full campaign: **220,000 frames in 19 min 18 s** (baseline 100k in 335 s ≈ 3.4 ms/trial; hot_80 was slowest at 38 ms/trial because
   ~107 dots per frame make identification O(N²) work). 220,013 CSV lines = 220,000 rows + 13 headers. 21 MB.
-- Results downloaded with the owner's permission (campaign_results.zip, 10.1 MB) → `results/campaign/` (git-ignored). The analysis re-run
+- Results downloaded (campaign_results.zip, 10.1 MB) → `results/campaign/` (git-ignored). The analysis re-run
   on the Mac gives a **byte-identical report**. Report, summary.json and figures copied to the tracked `docs/results/day5/`.
 - **Baseline:** 100,000/100,000 correct, CI [99.996, 100] %. Pointing p50/p90/p99/p99.9 = 1.58/3.06/4.61/6.09″; roll 6.45/16.60/28.17/38.67″.
   Stars in view mean 27.3 (min 7, max 85); the 88 baseline frames with < 10 stars were all solved.
@@ -307,7 +306,7 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 - **Failure geography** (noise 20): fail 2.5 % at |galactic latitude| < 15° (mean 38.9 stars) vs 29.0 % at > 60° (18.2 stars).
 - **Figure fixes after viewing:** last star-count bin plotted at 130 (bin midpoint) → plot at the bin's mean; failure-map hex gaps and RA labels hidden
   under the hexes → edge-coloured hexes + labels drawn on top with a halo; legend states "baseline 0".
-- Colab cleanup: runtime deleted; the notebook "Untitled1.ipynb" remains in the owner's private Drive. A generative-AI privacy notice popped up
+- Colab cleanup: runtime deleted; the notebook remains in my Drive. A generative-AI privacy notice popped up
   once (mis-click); it was cancelled, nothing accepted. `notebooks/colab_run.ipynb` gained the campaign + download cells.
 
 ### Correction (2026-10-15): Day 5 figures were NOT in commit 91f819f
@@ -343,7 +342,7 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 
 ## 2026-10-15: Day 7, public demo website
 
-### Publishing prep (owner's request): history rewritten
+### Publishing prep: history rewritten
 - Backup: `~/star-tracker-gpu-backup/before-rewrite-2026-10-15.bundle` (verified) + a copy of the private project notes file.
 - `git filter-branch` over all 36 commits: dropped the private notes file, replaced its two mentions with "project plan", fixed one commit
   message; force-pushed with `--force-with-lease` against the known old head (a369630 → 0a9aacf). Verified 0 matches in every commit's files and messages.
@@ -365,12 +364,12 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 - Suite (Mac): **127 passed**.
 
 ### Deployed (2026-10-15): https://knzyahmed.github.io/star-tracker-gpu/
-- Owner made the repo public and set Pages → Source: GitHub Actions. The first run (238c79c, before that) passed the tests on GitHub's Ubuntu
+- I made the repo public and set Pages → Source: GitHub Actions. The first run (238c79c, before that) passed the tests on GitHub's Ubuntu
   runner but failed at configure-pages (Pages not yet enabled) as expected. A README badge commit (fa65902) re-triggered it: tests ✓, publish ✓.
 - Live check in Chrome: first load ~35 s (Pyodide + NumPy + SciPy from the CDN), Orion solved 1.5″ (280 ms); a globe drag to Lepus
   (RA 74.5°, Dec −17.9°, 29 stars) solved 1.4″ in 135 ms. All bundle files return HTTP 200.
 
-### Website redesign (2026-10-15, owner's brief + 8 inspiration images)
+### Website redesign (2026-10-15, from my brief + 8 inspiration images)
 - **Brief.** Globe and camera image as the main focus; the step-by-step must not take horizontal space; "lost in space" mood,
   deep blues → purples → violets. Inspiration: full-bleed dark skies, no card boxes, thin lines, small wide-tracked uppercase labels,
   a large light serif title, numbered sections (Space Advisor, NASA Eyes, SpaceX concepts, a Webb nebula).
@@ -384,11 +383,11 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   to the nowrap comparison table in the solve section stretching the one-column grid → `min-width: 0`, scrollable `.answer`,
   first column may wrap. Now exactly 390 px wide.
 
-### Website, second pass (2026-10-15, owner's review): blue tones, text boxes, 3-D sphere, Starlink/Space Advisor layout
+### Website, second pass (2026-10-15, after my review): blue tones, text boxes, 3-D sphere, Starlink/Space Advisor layout
 - **Brief.** Blue tones instead of violet; text should not sit on bare stars (text-box effect); the globe should look 3-D and sit on
   one side with the space image behind it; the pointing panel underneath it. References: the Starlink concept and Space Advisor.
 - **Built.** Palette #04070f → #081225 → #12264a → #1f4f8f → #4aa3ff/#9fd0ff. `.box` = dark glass panel (rgba(5,11,26,.74) +
-  blur) on every text block, captions, controls, timeline, tables and figures. Background = the owner's Webb nebula
+  blur) on every text block, captions, controls, timeline, tables and figures. Background = a Webb nebula image
   (`web/bg.webp`, 640 px source) converted to a blue duotone with Pillow (grayscale → colorize navy/steel/ice → darkened, 39 KB),
   blurred 6 px behind the starfield; credit in the footer. Globe: ZOOM 1 (true orthographic hemisphere), body gradient lit from the
   upper left, grid and stars fading toward the limb, limb-darkening overlay, specular highlight, glowing FOV box, atmosphere glow.

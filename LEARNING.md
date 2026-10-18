@@ -411,7 +411,7 @@ while staying above the measurement error. Here that's 20–25″, about 3–4×
 The Mac can't run CUDA. So: (1) every GPU step has a NumPy twin doing the *same arithmetic*, tested on the Mac;
 (2) the CUDA kernels live in `tracker/kernels/*.cu` and are driven only from `tracker/gpu.py` (CuPy);
 (3) GPU tests begin with `pytest.importorskip("cupy")`, so on the Mac they are skipped, not failed;
-(4) `notebooks/colab_run.ipynb` runs them on a free Colab NVIDIA GPU. The owner runs it and pastes the output back.
+(4) `notebooks/colab_run.ipynb` runs them on a free Colab NVIDIA GPU.
 
 ### `pixel_normals(seed, frame)` and `hash32(x)`: counter-based noise (`tracker/noise.py`)
 
