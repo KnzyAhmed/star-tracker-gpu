@@ -435,3 +435,25 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   and 180 and that the fully dark disc holds only noise (max < background + 6σ, 8 px inside the limb); Betelgeuse stays hidden.
   Occlusion was already pure geometry, so this passed first time. (2) Raw-data edge test: at phase 90 the lit limb goes 10 % → 90 % within
   4 px, the terminator takes > 40 px. Day 9's limb finder will only search the lit side.
+
+## 2026-10-18: Day 9, limb detection
+
+### `detect(mask=)`, `limb.exclusion_mask`
+- **Built.** Optional ignore-mask in `detect` (old tests unchanged); `exclusion_mask` = largest bright region dilated by 6 px.
+- **Measured.** 100,000 km, phase 90, with stars and noise: without the mask the limb makes > 20 false stars; with it, all detections are
+  real stars except one 5σ noise false alarm 175 px away (0.3 expected per frame).
+
+### `tracker/limb.py`: `segment_earth`, `find_limb`
+- **Decision: edge rule chosen by measurement.** Noise-free sphere, three distances, five phases (table in LEARNING.md): the plan's
+  "50 % of the line's peak" is biased on a Lambertian limb; a fixed low threshold is +2–3 px outward (PSF tail); max gradient is noisy.
+  Chose 50 % of the local plateau read 6 px inside the coarse edge (tuned over 2/3/4/6/8 px): within ±0.16 px at phases ≥ 45°.
+- **Deviation from the plan.** Tolerance 0.15 px (not 0.1) for the noise-free limb test at GEO and 100,000 km: the 4 × 4 render edge
+  quantisation alone is 0.125 px. Lunar distance: 0.3 px.
+- **Known biases kept, not hidden:** phase 0 (fading limb) −0.5 to −1.1 px; thin crescents (lunar, 135°) +0.7 px. A test pins the
+  phase-0 bias range so a later fix is visible as a test change.
+- **Measured on noisy frames with stars** (`experiments/show_limb.py`): GEO phase 90: 179 points, median +0.03 px, p95 |err| 0.06 px.
+  100,000 km, 5° off-axis, roll 30°, oblique Sun: 179 points, −0.03 / 0.09 px. Lunar, phase 135°: 180 points, +0.73 / 0.96 px.
+- **Problems.** Two test expectations were mine, not the code's: 300 points asked of 180 lines; "mask bigger than the true disc" when
+  only the lit half is bright; one noise false alarm out of 17 detections failed a 95 % rule → "at most one".
+- **Tests.** `tests/test_limb.py`: 9. Suite: **163 passed**.
+- **Day 9 gate:** `docs/results/day9/limb_grid.png` (limb points on three noisy frames + radial errors) ready for review.

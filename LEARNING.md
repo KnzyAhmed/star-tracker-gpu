@@ -758,3 +758,54 @@ each; Earth touches 600,000 pixels. That is why Day 11 moves this kernel to CUDA
 A star in direction r is hidden if the ray from p along r hits the ellipsoid: the same quadratic with d = r. `render_scene` removes those
 stars, adds the star image (with background and noise), then the Earth image. Hand check: from p = (100,000, 0, 0), ρ = 3.66°; a star
 3.58° (0.98 ρ) from the anti-Earth direction is hidden, one at 3.73° (1.02 ρ) is not.
+
+## Day 9: finding the limb
+
+### `detect(..., mask=None)`
+The star detector can now ignore pixels. Earth's bright region, grown by 6 px (`limb.exclusion_mask`), is masked so the disc's
+noisy edge cannot pose as stars: without the mask a 100,000 km Earth produced dozens of false "stars" along its limb. `mask=None`
+is the old behaviour, so none of the Day 2 tests changed.
+
+### `find_limb(image, A_est, s, background, read_noise)` (`tracker/limb.py`)
+
+**What it does.** It finds sub-pixel points on the sharp edge of Earth's lit disc. (1) Threshold at background + 10σ and take the
+largest connected region: that is Earth (a star covers ~30 px, the disc 10⁴–10⁵). Its centroid is the seed and its extent the scan range.
+(2) Put the Sun into the camera frame, s_c = A_est·s: the lit limb is centred on the image direction of (s_c[0], s_c[1]), and the phase
+angle is arccos(−s_c[2]). (3) Cast 180 scan lines from the seed within ±75° of that direction, sample them bilinearly every 0.25 px,
+and on each line take the outermost crossing of 50 % of the *local plateau*, read 6 px inside the coarse edge. (4) Fewer than 20 good
+lines → empty array, the honest "no solution".
+
+**IN / OUT.** image (1024, 1024) counts; A_est (3, 3); s (3,) unit; OUT (K, 2) of (u, v) pixel coordinates, K ≈ 180 or 0.
+
+**Worked example (one scan line, by hand).** Samples every 0.25 px, background already subtracted. The coarse edge (last sample above 50
+counts) is at r = 444.75. The plateau is the mean over r = 434.75–438.75: 2,950 counts. Half level = 1,475. The last sample above
+1,475 is at r = 444.25 with 1,600; the next, at 444.50, has 1,350. Linear interpolation: 444.25 + (1600 − 1475)/(1600 − 1350) × 0.25 =
+444.25 + 0.125 = **444.375 px**. The true limb radius at GEO is 444.35: 0.025 px off.
+
+**Why 50 % of the local plateau (measured, noise-free, error in px, + = outside the true limb):**
+
+| rule | phase 0 | phase 45–135 |
+|---|---|---|
+| fixed low threshold (background + 25) | +2.1 | +2.8 to +3.2 |
+| maximum gradient | −0.6 to −1.6 | −0.3 to −1.0, noisy |
+| 50 % of the line's peak (the plan's rule) | at 0.87 R | fine only where the limb is a step |
+| **50 % of the local plateau, 6 px inside** | **−0.5 to −1.1** | **within ±0.16** |
+
+A step edge blurred by a symmetric PSF crosses half its height exactly at the step, so the 50 % rule is unbiased wherever the limb is a
+step: the lit side at phase ≥ 45°. A fixed low threshold lands on the PSF tail: for a 3,000-count step, 25 counts is reached
+σ·Φ⁻¹(1 − 25/3000) = 1.2 × 2.4 = 2.9 px outside the edge, which is what I measured. The plateau is read 6 px (5σ) inside the coarse
+edge: closer and it is still on the blurred edge (+0.8 px at 3 px), farther and it is on the shading fall-off (−0.7 px at 8 px).
+
+**Known limitations, measured and kept.** At phase 0 the Lambertian limb fades to zero, so the rule sits 0.5–1.1 px inside the true limb.
+Thin crescents (lunar distance, phase 135°: the crescent is 14 px wide) put the plateau on the fading part and bias the edge +0.7 px
+outward. Both will show up in the Day 12 campaign as range bias at those phases, and both are model artefacts to a degree: the real
+Earth's atmosphere brightens the limb.
+
+**Why never the terminator.** The terminator is where cos(n·s) → 0: a ramp tens of pixels wide (10 % → 90 % over > 40 px at GEO), not an
+edge. In the raw data it is nowhere near as crisp as a stretched display makes it look. A scan line crossing it would report an "edge"
+far inside the disc, and the horizon fit would then see a smaller Earth and report a larger range.
+
+**Interview question.** *"Your limb detector needs the attitude before it can run. Isn't that circular?"*
+Answer: no, the attitude comes from the stars (the Phase 1 tracker), which does not need Earth. The attitude is used for two things here:
+to know which side of the disc is lit, and later to turn each limb pixel into a world-frame direction. If the attitude is wrong by δ, the
+limb directions rotate rigidly by δ; the fitted *range* (from the apparent size) is unaffected, only the position's direction is.
