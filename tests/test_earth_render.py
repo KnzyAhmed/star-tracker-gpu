@@ -175,3 +175,48 @@ def test_render_scene_hides_stars_behind_earth():
     assert img.shape == (N_PIX, N_PIX) and abs(img[0:50, 0:50].mean() - BACKGROUND) < 1.0
     assert abs(img[0:50, 0:50].std() - READ_NOISE) < 0.6
     assert mask[511, 511] and img.max() > EARTH_LEVEL * 0.9
+
+
+def test_stars_behind_the_night_side_are_hidden_too():
+    """The dark half is still Earth. Occlusion is pure geometry and must not depend on the Sun."""
+    cat = load_catalog(5.5)
+    k_bet = int(np.flatnonzero(cat.hr == 2061)[0])
+    p = -GEO * cat.r[k_bet]
+    ra = np.degrees(np.arctan2(cat.r[k_bet, 1], cat.r[k_bet, 0])) % 360
+    dec = np.degrees(np.arcsin(cat.r[k_bet, 2]))
+    A = attitude_from_pointing(ra, dec, 0.0)
+    night = render_scene(p, A, -p / GEO, cat, rng=np.random.default_rng(0))         # phase 180: fully dark Earth
+    day = render_scene(p, A, p / GEO, cat, rng=np.random.default_rng(0))            # phase 0: fully lit
+    assert np.array_equal(night[4], day[4])                                          # identical star lists
+    assert k_bet not in night[4]
+    from scipy.ndimage import binary_erosion
+    inside = binary_erosion(night[1], iterations=8)                                 # the disc, away from PSF leakage at its edge
+    assert night[0][inside].max() < BACKGROUND + 6 * READ_NOISE                      # nothing but noise on the dark disc
+    # phase 90: a star under the DARK half must also be gone
+    s = np.array([0.0, 0.0, 1.0])
+    img, mask, u, v, idx = render_scene(p, A, s, cat, rng=np.random.default_rng(0))
+    uu, vv, vis = project(A, cat.r)
+    hidden = np.setdiff1d(np.flatnonzero(vis), idx)
+    dark_hidden = [k for k in hidden if img[int(round(vv[k])), int(round(uu[k]))] < BACKGROUND + 10 * READ_NOISE]
+    assert len(dark_hidden) >= 1                                                     # some hidden stars sit on the night side
+    assert not any(mask[int(round(vv[k])), int(round(uu[k]))] for k in idx)
+
+
+def test_terminator_is_a_soft_ramp_and_the_limb_is_a_sharp_step():
+    """Raw data, not the display stretch: at phase 90 the lit-side limb goes from ~0 to ~EARTH_LEVEL within a few PSF
+    widths, while the terminator fades over tens of pixels (Lambertian cos falls to zero at the day/night line).
+    A limb finder that looks for 'the edge' on the dark side would land on the terminator."""
+    p = np.array([GEO, 0.0, 0.0])
+    img, mask = render_earth(p, TOWARD_EARTH, s=np.array([0.0, 1.0, 0.0]))
+    row = (img[511] + img[512]) / 2
+    r_px = F_PIX * np.tan(np.arcsin(R_EQ / GEO))
+    lit_side = 1 if row[int(C_PIX + r_px / 2)] > row[int(C_PIX - r_px / 2)] else -1
+    # limb on the lit side: 10 % -> 90 % of the level within 4 px
+    xs = np.arange(N_PIX)
+    on_lit = (xs - C_PIX) * lit_side > 0
+    lo = xs[on_lit & (row > 0.1 * EARTH_LEVEL)].max() if lit_side > 0 else xs[on_lit & (row > 0.1 * EARTH_LEVEL)].min()
+    hi = xs[on_lit & (row > 0.9 * EARTH_LEVEL)].max() if lit_side > 0 else xs[on_lit & (row > 0.9 * EARTH_LEVEL)].min()
+    assert abs(lo - hi) <= 4
+    # terminator (at the centre column): 10 % -> 90 % takes more than 40 px
+    term = np.flatnonzero((row > 0.1 * EARTH_LEVEL) & (row < 0.9 * EARTH_LEVEL) & ((xs - C_PIX) * lit_side < r_px * 0.95))
+    assert np.ptp(term) > 40

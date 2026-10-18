@@ -431,3 +431,7 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
 ### Day 8 gate: `experiments/show_earth.py` → `docs/results/day8/earth_grid.png`, `earth_geo_phase90.png`
 - 3 distances × 3 phases with the real star field, occlusion and noise. Lit fractions 1.00 / 0.49 / 0.09–0.15; stars in view 9 (GEO, most
   hidden or outside), 17, 18. Images look right: sharp limb, soft terminator, thin crescents, hidden stars. **Gate: images ready for review.**
+- **Review checks before Day 9 (2026-10-18).** (1) Stars behind the night side: added a test that the star list is identical at phase 0
+  and 180 and that the fully dark disc holds only noise (max < background + 6σ, 8 px inside the limb); Betelgeuse stays hidden.
+  Occlusion was already pure geometry, so this passed first time. (2) Raw-data edge test: at phase 90 the lit limb goes 10 % → 90 % within
+  4 px, the terminator takes > 40 px. Day 9's limb finder will only search the lit side.
