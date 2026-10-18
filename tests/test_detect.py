@@ -115,3 +115,22 @@ def test_threshold_comparison_is_float32_whatever_the_input_type():
     img[300, 300] = t32                                              # equal to float32 threshold
     assert len(detect(img, BACKGROUND, rn)[0]) == 0
     assert len(detect(img, np.float64(BACKGROUND), np.float64(rn))[0]) == 0
+
+
+def test_detect_mask_ignores_pixels():
+    """Day 9: an optional mask of pixels to ignore (the Earth disc). Masked bright pixels produce no stars,
+    stars outside the mask are unaffected, and mask=None reproduces the old behaviour exactly."""
+    img = stars([200.0, 700.0], [300.0, 800.0], [2000.0, 8000.0])
+    u0, v0, f0 = detect(img, BACKGROUND, READ_NOISE)
+    assert np.array_equal(detect(img, BACKGROUND, READ_NOISE, mask=None)[0], u0)
+    mask = np.zeros(img.shape, dtype=bool)
+    mask[790:811, 690:711] = True                                  # hide the brighter star
+    u, v, f = detect(img, BACKGROUND, READ_NOISE, mask=mask)
+    assert len(u) == 1 and abs(u[0] - 200.0) < 0.01 and abs(f[0] - f0[1]) < 1e-6
+    # a bright disc: without the mask its noisy edge makes false stars, with the mask none
+    disc = flat()
+    vv, uu = np.indices(disc.shape)
+    disc[np.hypot(uu - 512, vv - 512) < 150] = 3000.0
+    disc += np.random.default_rng(0).normal(0, READ_NOISE, disc.shape).astype(np.float32)
+    assert len(detect(disc, BACKGROUND, READ_NOISE)[0]) > 50
+    assert len(detect(disc, BACKGROUND, READ_NOISE, mask=np.hypot(uu - 512, vv - 512) < 158)[0]) <= 1

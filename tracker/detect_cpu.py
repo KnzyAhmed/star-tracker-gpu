@@ -21,13 +21,15 @@ _BEFORE = [(-1, -1), (-1, 0), (-1, 1), (0, -1)]
 _AFTER = [(0, 1), (1, -1), (1, 0), (1, 1)]
 
 
-def detect(image, background, read_noise, k_sigma=5):
+def detect(image, background, read_noise, k_sigma=5, mask=None):
     """Find stars in one image.
 
     image:       (H, W) array, counts. Indexed image[v, u].
     background:  flat background level, counts per pixel.
     read_noise:  per-pixel Gaussian noise sigma, counts.
     k_sigma:     detection threshold in units of read_noise above background.
+    mask:        optional (H, W) bool, True = ignore this pixel as a candidate (e.g. Earth's disc,
+                 dilated by a few pixels so the disc's noisy edge cannot pose as stars).
 
     Returns (u, v, flux), float64 arrays of length N, sorted brightest first.
       u, v: centroid in pixels (column, row); flux: background-subtracted 5x5 sum, counts.
@@ -39,7 +41,10 @@ def detect(image, background, read_noise, k_sigma=5):
     threshold = np.float32(background + k_sigma * read_noise)
 
     # 1a. threshold: one pass over the whole image, leaves a few hundred pixels at most
-    vv, uu = np.nonzero(image > threshold)
+    candidates = image > threshold
+    if mask is not None:
+        candidates &= ~np.asarray(mask, dtype=bool)
+    vv, uu = np.nonzero(candidates)
 
     # 1b. local-max test, only on those pixels. Pad by 1 with -inf so edge pixels
     #     have neighbours that can never win.
