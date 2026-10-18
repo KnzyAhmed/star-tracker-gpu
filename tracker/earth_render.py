@@ -40,6 +40,29 @@ def occluded(p, r, a=R_EQ, c=R_EQ):
     return _ray_hits(np.asarray(p, dtype=np.float64), np.asarray(r, dtype=np.float64), a, c)[0]
 
 
+def subpixel_offsets(supersample):
+    """Sub-ray offsets within a pixel: (k + 0.5)/n - 0.5 for k = 0..n-1 (the same list on CPU and GPU)."""
+    return (np.arange(supersample) + 0.5) / supersample - 0.5
+
+
+def earth_bbox(p, A, a, c, n_pix=N_PIX):
+    """Pixel bounding box (u0, u1, v0, v1), inclusive, that contains the projected disc plus the PSF halo, or None
+    if Earth is not in the frame. Computed on the HOST for both the CPU and the GPU renderer, so they draw the
+    same pixels. Off-axis the disc stretches by 1/cos^2(theta) (theta <= the field's half-diagonal)."""
+    p = np.asarray(p, dtype=np.float64)
+    visible, (uc, vc), rho, pr = earth_in_view(p, A, R=max(a, c), n_pix=n_pix)
+    if not visible:
+        return None
+    b_centre = A @ (-p / np.linalg.norm(p))
+    stretch = 1.0 / max(b_centre[2], 0.5) ** 2
+    half = pr * stretch + HALO
+    u0, u1 = max(int(np.floor(uc - half)), 0), min(int(np.ceil(uc + half)), n_pix - 1)
+    v0, v1 = max(int(np.floor(vc - half)), 0), min(int(np.ceil(vc + half)), n_pix - 1)
+    if u1 < u0 or v1 < v0:
+        return None
+    return u0, u1, v0, v1
+
+
 def render_earth(p, A, s, a=R_EQ, c=R_EQ, supersample=4, brightness=EARTH_LEVEL, shade=True,
                  n_pix=N_PIX, sigma_psf=SIGMA_PSF):
     """Earth as the camera sees it. p: spacecraft position (km), A: attitude (sky -> camera),
@@ -50,23 +73,16 @@ def render_earth(p, A, s, a=R_EQ, c=R_EQ, supersample=4, brightness=EARTH_LEVEL,
     s = np.asarray(s, dtype=np.float64)
     image = np.zeros((n_pix, n_pix), dtype=np.float32)
     mask = np.zeros((n_pix, n_pix), dtype=bool)
-    visible, (uc, vc), rho, pr = earth_in_view(p, A, R=max(a, c), n_pix=n_pix)
-    if not visible:
+    box = earth_bbox(p, A, a, c, n_pix)
+    if box is None:
         return image, mask
-    # bounding box: the disc stretches off-axis by 1/cos^2(theta); theta <= half-diagonal of the field
-    b_centre = A @ (-p / np.linalg.norm(p))
-    stretch = 1.0 / max(b_centre[2], 0.5) ** 2
-    half = pr * stretch + HALO
-    u0, u1 = max(int(np.floor(uc - half)), 0), min(int(np.ceil(uc + half)), n_pix - 1)
-    v0, v1 = max(int(np.floor(vc - half)), 0), min(int(np.ceil(vc + half)), n_pix - 1)
-    if u1 < u0 or v1 < v0:
-        return image, mask
+    u0, u1, v0, v1 = box
     V, U = np.mgrid[v0:v1 + 1, u0:u1 + 1]
     U, V = U.ravel().astype(np.float64), V.ravel().astype(np.float64)
     inv2 = np.array([1.0 / a**2, 1.0 / a**2, 1.0 / c**2])
     light = np.zeros(len(U))
     hits = np.zeros(len(U), dtype=np.int32)
-    offsets = (np.arange(supersample) + 0.5) / supersample - 0.5
+    offsets = subpixel_offsets(supersample)
     for du in offsets:
         for dv in offsets:
             d = unproject(U + du, V + dv) @ A                       # world-frame ray directions, unit

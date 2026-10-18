@@ -154,3 +154,56 @@ def test_campaign_rows_cpu_equal_gpu():
     assert np.array_equal(c[:, exact], g[:, exact])
     errs = [COLUMNS.index(n) for n in ("total", "pointing", "roll_err")]
     np.testing.assert_allclose(g[:, errs], c[:, errs], atol=1e-3, equal_nan=True)   # arcsec
+
+
+# ---------------------------------------------------------------- Day 11: Earth on the GPU
+
+from tracker.earth_render import render_earth                   # noqa: E402
+from tracker.limb import find_limb                              # noqa: E402
+from tracker.world import R_EQ, R_POL                           # noqa: E402
+
+EARTH_CASES = [  # (position km, attitude, sun)
+    (np.array([42_164.0, 0.0, 0.0]), attitude_from_pointing(180.0, 3.0, 20.0), np.array([0.0, 1.0, 0.0])),
+    (np.array([100_000.0, 0.0, 0.0]), attitude_from_pointing(180.0, 5.0, 30.0), np.array([0.3, 0.9, 0.3]) / np.linalg.norm([0.3, 0.9, 0.3])),
+    (np.array([384_400.0, 0.0, 0.0]), attitude_from_pointing(180.0, 0.0, 0.0), np.array([np.cos(np.radians(135)), np.sin(np.radians(135)), 0.0])),
+    (np.array([42_164.0, 0.0, 0.0]), attitude_from_pointing(180.0, 0.0, 0.0), np.array([1.0, 0.0, 0.0])),      # full phase
+]
+
+
+def _batch(cases, **kw):
+    P = np.array([c[0] for c in cases]); At = np.array([c[1] for c in cases]); S = np.array([c[2] for c in cases])
+    return gpu.render_earth_batch(P, At, S, **kw)
+
+
+def test_earth_gpu_matches_cpu_shaded_sphere():
+    imgs, masks = _batch(EARTH_CASES)
+    assert imgs.shape == (4, 1024, 1024) and imgs.dtype == cp.float32 and masks.dtype == cp.bool_
+    for k, (p, A, s) in enumerate(EARTH_CASES):
+        cpu_img, cpu_mask = render_earth(p, A, s)
+        np.testing.assert_allclose(cp.asnumpy(imgs[k]), cpu_img, rtol=1e-5, atol=2e-3)
+        assert np.array_equal(cp.asnumpy(masks[k]), cpu_mask)
+
+
+def test_earth_gpu_matches_cpu_ellipsoid_and_flat_disc():
+    p, A, s = EARTH_CASES[1]
+    imgs, masks = _batch([EARTH_CASES[1]], a=R_EQ, c=R_POL)
+    cpu_img, cpu_mask = render_earth(p, A, s, a=R_EQ, c=R_POL)
+    np.testing.assert_allclose(cp.asnumpy(imgs[0]), cpu_img, rtol=1e-5, atol=2e-3)
+    assert np.array_equal(cp.asnumpy(masks[0]), cpu_mask)
+    imgs, _ = _batch([EARTH_CASES[0]], shade=False, supersample=8)
+    np.testing.assert_allclose(cp.asnumpy(imgs[0]), render_earth(*EARTH_CASES[0], shade=False, supersample=8)[0], rtol=1e-5, atol=2e-3)
+
+
+def test_earth_gpu_same_limb_points():
+    """The Day 11 gate's second half: the limb finder sees the same edge in both images."""
+    imgs, _ = _batch(EARTH_CASES[:3])
+    for k, (p, A, s) in enumerate(EARTH_CASES[:3]):
+        g = find_limb(cp.asnumpy(imgs[k]) + BACKGROUND, A, s, BACKGROUND, READ_NOISE)
+        c = find_limb(render_earth(p, A, s)[0] + BACKGROUND, A, s, BACKGROUND, READ_NOISE)
+        assert g.shape == c.shape and len(g) >= 100
+        assert np.abs(g - c).max() < 1e-3
+
+
+def test_earth_gpu_not_in_view_is_empty():
+    imgs, masks = _batch([(np.array([42_164.0, 0.0, 0.0]), attitude_from_pointing(0.0, 0.0, 0.0), np.array([1.0, 0.0, 0.0]))])
+    assert float(imgs.max()) == 0.0 and not bool(masks.any())

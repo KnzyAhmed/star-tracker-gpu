@@ -101,3 +101,40 @@ def add_hot_pixels_batch(images, draws):
         g = cp.asarray(np.concatenate(idx))
         flat[g] += cp.asarray(np.concatenate(val))
     return images
+
+
+def render_earth_batch(positions, attitudes, suns, a=None, c=None, supersample=4, brightness=None, shade=True,
+                       sigma_psf=None, n_pix=N_PIX):
+    """Earth for F frames on the GPU -> (images (F, n_pix, n_pix) float32 CuPy, masks (F, n_pix, n_pix) bool CuPy).
+    Same contract as earth_render.render_earth per frame: Earth only, no background or noise, PSF-blurred.
+    positions (F, 3) km, attitudes (F, 3, 3), suns (F, 3). Bounding boxes come from the host (earth_render.earth_bbox),
+    one kernel launch per frame over its box (16 x 16 threads per block)."""
+    from cupyx.scipy.ndimage import gaussian_filter
+    from tracker.camera import C_PIX, F_PIX
+    from tracker.earth_render import earth_bbox
+    from tracker.world import EARTH_LEVEL, R_EQ
+    a = R_EQ if a is None else a
+    c = a if c is None else c
+    brightness = EARTH_LEVEL if brightness is None else brightness
+    sigma_psf = SIGMA_PSF if sigma_psf is None else sigma_psf
+    positions, attitudes, suns = (np.asarray(x, dtype=np.float64) for x in (positions, attitudes, suns))
+    F = len(positions)
+    images = cp.zeros((F, n_pix, n_pix), dtype=cp.float32)
+    masks = cp.zeros((F, n_pix, n_pix), dtype=cp.uint8)
+    kernel = _kernel("earth.cu", "earth_kernel")
+    for f in range(F):
+        box = earth_bbox(positions[f], attitudes[f], a, c, n_pix)
+        if box is None:
+            continue
+        u0, u1, v0, v1 = box
+        bw, bh = u1 - u0 + 1, v1 - v0 + 1
+        grid = ((bw + BLOCK - 1) // BLOCK, (bh + BLOCK - 1) // BLOCK)
+        kernel(grid, (BLOCK, BLOCK),
+               (cp.asarray(positions[f]), cp.asarray(attitudes[f].ravel()), cp.asarray(suns[f]),
+                np.float64(a), np.float64(c), np.float64(F_PIX), np.float64(C_PIX),
+                np.int32(u0), np.int32(v0), np.int32(bw), np.int32(bh), np.int32(n_pix), np.int32(supersample),
+                np.float64(brightness), np.int32(1 if shade else 0), images[f], masks[f]))
+    if sigma_psf > 0:
+        for f in range(F):
+            images[f] = gaussian_filter(images[f], sigma_psf, truncate=4.0)
+    return images, masks.astype(cp.bool_)
