@@ -485,3 +485,16 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   Gaussian PSF (σ = 1.2 px), with the edge position and a brightness scale as the two free parameters. This removes the phase-dependent
   bias (fading limb at phase 0, thin crescents) at its source, keeps the same scan lines, and can be tested against the noise-free renders
   to 0.05 px. Cost: a small nonlinear fit per line (~180 per frame, each a 1-D search over ~0.1 px steps or a Gauss–Newton on 2 parameters).
+
+### Fix approved and implemented (2026-10-18): predicted-profile edge fit, `limb.refine_limb`, two passes in `position_from_image`
+- **Built.** `scan_lines` shared by both finders; `refine_limb`: per line, predicted shape = Lambertian (n·s)+ of the sphere at p₀ along
+  the line (0 beyond its limb), convolved with the σ = 1.2 px Gaussian; model = A · shape(r − δ); A in closed form, δ on a 0.05 px grid
+  (±4 px) + parabolic refinement; fit window 14 px inside / 8 px outside the predicted edge; lines with peak < 20σ skipped.
+  `position_from_image(refine=True, iterations=2)`: 50 % rule → fit → (refine → fit) × 2. `refine=False` keeps the old rule.
+- **Decision: 2 iterations.** Measured on the noise-free lunar crescent: 1 pass −0.13 px / +0.66 % range; 2 passes −0.05 px / −0.06 %;
+  3 passes −0.04 px / −0.01 % (no real gain). Render supersampling 4/8/16 gives the same residual, so it is the 1-D model's limit, not a render artefact.
+- **Before/after** (`experiments/day10_bias.py`, both methods, `docs/results/day10/bias_table.md`): GEO phase 0 +65.5 → +1.8 km;
+  100,000 km off-axis +87 → +13 km; lunar 90 +1,507 → +348 km (+0.09 %); lunar crescent +22,355 km (+5.8 %) → −220 km (−0.06 %) noise-free,
+  +122 km (+0.03 %) noisy; cross-range 489 → 11 km. All below the 1 % bar; the worst case is now lunar phase 90 at 0.09 %.
+- **Tests.** `tests/test_limb.py` +7 (bias removed at 4 phase/distance cases, even along the arc, with noise, end-to-end < 0.3 % and
+  better than the old rule). Suite: **184 passed**.

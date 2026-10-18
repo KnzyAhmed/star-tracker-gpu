@@ -132,3 +132,66 @@ def test_exclusion_mask_stops_the_disc_posing_as_stars():
     dist_to_true, _ = cKDTree(np.column_stack([u, v])).query(np.column_stack([du, dv]))
     assert (dist_to_true >= 1.5).sum() <= 1                        # at most one 5-sigma noise false alarm (~0.3 expected)
     assert len(detect(img, BACKGROUND, READ_NOISE)[0]) > len(du) + 20   # without the mask the limb makes false stars
+
+
+# ---------------------------------------------------------------- Day 10 fix: predicted-profile edge fit
+
+from tracker.limb import refine_limb                                   # noqa: E402
+from tracker.opnav import fit_horizon_sphere, limb_directions, position_error, position_from_image   # noqa: E402
+
+
+def first_pass_position(img, A, s):
+    pts0 = find_limb(img, A, s, BACKGROUND, READ_NOISE)
+    return fit_horizon_sphere(limb_directions(pts0, A), R_EQ)
+
+
+@pytest.mark.parametrize("label, dist, sun, tol", [
+    ("GEO phase 0, fading limb", GEO, np.array([1.0, 0.0, 0.0]), 0.15),
+    ("lunar crescent, phase 135", LUNAR, sun_at_phase(135.0), 0.2),
+    ("GEO phase 90", GEO, SUN_90, 0.15),
+    ("lunar phase 90", LUNAR, SUN_90, 0.2),
+])
+def test_profile_fit_removes_the_shading_bias(label, dist, sun, tol):
+    """Noise-free: the predicted-profile edge sits on the true limb where the 50 % rule was biased by up to 1 px."""
+    p = np.array([dist, 0.0, 0.0])
+    img = render_earth(p, TOWARD_EARTH, sun)[0] + BACKGROUND
+    p0 = first_pass_position(img, TOWARD_EARTH, sun)
+    pts = refine_limb(img, TOWARD_EARTH, sun, p0, BACKGROUND, READ_NOISE)
+    assert len(pts) >= 100
+    err = true_limb_error(pts, p, TOWARD_EARTH)
+    assert abs(np.median(err)) < tol and np.abs(err).max() < 2 * tol, (label, np.median(err), np.abs(err).max())
+
+
+def test_profile_fit_bias_is_even_along_the_arc():
+    """The crescent's 50 % bias ran from +0.47 to +0.96 px along the arc (that unevenness is what broke the range);
+    the profile fit must leave no trend: error spread below 0.1 px."""
+    p = np.array([LUNAR, 0.0, 0.0])
+    s = sun_at_phase(135.0)
+    img = render_earth(p, TOWARD_EARTH, s)[0] + BACKGROUND
+    pts = refine_limb(img, TOWARD_EARTH, s, first_pass_position(img, TOWARD_EARTH, s), BACKGROUND, READ_NOISE)
+    err = true_limb_error(pts, p, TOWARD_EARTH)
+    assert np.std(err) < 0.1 and np.ptp(err) < 0.4
+
+
+def test_profile_fit_with_noise_lunar_crescent():
+    cat = load_catalog(5.5)
+    p = np.array([LUNAR, 0.0, 0.0])
+    s = sun_at_phase(135.0)
+    img, *_ = render_scene(p, TOWARD_EARTH, s, cat, rng=np.random.default_rng(11))
+    pts = refine_limb(img, TOWARD_EARTH, s, first_pass_position(img, TOWARD_EARTH, s), BACKGROUND, READ_NOISE)
+    err = true_limb_error(pts, p, TOWARD_EARTH)
+    assert len(pts) >= 100 and abs(np.median(err)) < 0.25
+
+
+def test_position_from_image_uses_the_profile_fit_by_default():
+    """End to end at lunar distance, phase 135, noisy, true attitude, sphere Earth: range within 0.3 % (was +5.8 %
+    with the 50 % rule, +0.7 % after one profile pass, ~0.1 % after the two passes the pipeline runs)."""
+    cat = load_catalog(5.5)
+    p = np.array([LUNAR, 0.0, 0.0])
+    s = sun_at_phase(135.0)
+    img, *_ = render_scene(p, TOWARD_EARTH, s, cat, rng=np.random.default_rng(12))
+    p_est = position_from_image(img, TOWARD_EARTH, s, BACKGROUND, READ_NOISE, a=R_EQ, c=R_EQ)
+    total, rng_err, cross = position_error(p_est, p)
+    assert abs(rng_err) / LUNAR < 0.003 and cross / LUNAR < 0.002
+    p_raw = position_from_image(img, TOWARD_EARTH, s, BACKGROUND, READ_NOISE, a=R_EQ, c=R_EQ, refine=False)
+    assert abs(position_error(p_raw, p)[1]) > abs(rng_err)             # the old rule is worse

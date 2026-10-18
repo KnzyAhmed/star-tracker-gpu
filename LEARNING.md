@@ -865,3 +865,43 @@ Answer: because at lunar distance Earth is 48 px across and only a 60° arc is l
 arc's curvature, and a bias that is uneven along the arc (bigger in the middle, where the crescent is widest) changes the sagitta by half a
 pixel out of 6.5. Position error from a horizon sensor scales like (limb error / pixel radius) × a geometric amplification that grows
 as the arc shortens; the fix is an unbiased edge model, not more points.
+
+### `refine_limb(image, A_est, s, p0, ...)`: the predicted-profile edge fit (`tracker/limb.py`)
+
+**What it does.** The same scan lines as `find_limb`, but instead of asking "where does the line cross 50 %?" it asks "where must the
+edge be for the *predicted* brightness profile to match the samples?". The prediction along a line is the Lambertian shading of a
+sphere at the first-pass position p₀ (zero beyond its limb), convolved with the 1.2 px Gaussian PSF. Two free parameters per line: a
+brightness scale A (linear, solved in closed form) and an edge shift δ (searched on a 0.05 px grid from −4 to +4 px, then refined with a
+parabola through the three best residuals). The edge is the model limb plus δ.
+
+**IN / OUT.** As `find_limb`, plus p₀ (3,) km. OUT (K, 2) pixel points. `position_from_image` runs it twice: the shape comes from the
+50 %-rule position first, then from the refined position.
+
+**Worked example (why the 50 % rule was biased and the fit is not).** At phase 0 the unblurred brightness near the limb falls like
+L·√(2x/R) with x the distance inside the limb: at x = 6 px (R = 444) it is 0.164 L, at x = 1.5 px 0.082 L, at x = 0 zero. The 50 % rule reads
+its "plateau" at x = 6 px (0.164 L) and looks for 0.082 L, which the fade reaches at x = 1.5 px: the edge is called 1.5 px too far in before
+blurring; after the blur pushes it back out a little the measured bias was −0.71 px. The profile fit knows the fade shape, so for it the
+only unknowns are the overall brightness and the position: on the same noise-free frame it is within −0.02 px.
+
+**Why two passes.** The shape is computed from p₀. On the lunar crescent the 50 %-rule p₀ is 6 % too far, so the first pass still left
+−0.13 px with a trend along the arc, and the range was +0.66 %. Feeding the refined position back for a second pass gives −0.05 px, flat
+along the arc, and a range within ±0.08 %. A third pass changes nothing; neither does rendering at 8 × 8 or 16 × 16 instead of 4 × 4,
+so the remaining 0.05 px is not a render artefact (my first guess) but the limit of the per-line model (a 1-D blur along the line
+approximates the 2-D PSF on a curved edge).
+
+| case (sphere model, true attitude) | 50 % rule: limb bias → range error | profile fit (2 passes): limb bias → range error |
+|---|---|---|
+| GEO, phase 0 | −0.71 px → +65.5 km (+0.155 %) | −0.02 px → **+1.8 km (+0.004 %)** |
+| GEO, phase 90 | +0.03 px → +1.6 km | −0.02 px → +1.1 km |
+| 100,000 km, off-axis, oblique Sun | −0.03 px (uneven) → +87 km (+0.087 %) | −0.02 px → **+13 km (+0.013 %)** |
+| lunar, phase 90 | +0.12 px → +1,507 km (+0.39 %) | −0.04 px → **+348 km (+0.09 %)** |
+| lunar, phase 135 crescent | +0.74 px (uneven) → +22,355 km (+5.8 %), cross 489 km | −0.05 px → **−220 km (−0.06 %)**, cross 11 km |
+
+Noise (read noise 5, stars) changes these by at most a few hundred km at lunar distance (+122 km on the crescent): the fit is limited
+by bias, not by noise, and the bias is now at the 0.05 px level.
+
+**Interview question.** *"Why fit a model profile instead of just calibrating the threshold bias as a function of phase angle?"*
+Answer: a lookup table would be right only for the conditions it was built for: this PSF, this brightness, this phase, a sphere.
+The profile fit derives the correction from the physics each time: change the exposure, the PSF width, the Sun angle or the shape of the
+disc and it still finds the edge, and when the picture does not match the model (e.g. clouds, limb brightening) the residual tells me so.
+It costs ~180 tiny two-parameter fits per frame, a few tens of milliseconds.

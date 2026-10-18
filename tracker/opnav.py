@@ -14,7 +14,7 @@ import numpy as np
 from tracker.camera import project, unproject
 from tracker.detect_cpu import detect
 from tracker.identify import identify
-from tracker.limb import find_limb
+from tracker.limb import find_limb, refine_limb
 from tracker.render_cpu import BACKGROUND, READ_NOISE, render_sky
 from tracker.world import R_EQ, R_POL
 
@@ -76,15 +76,31 @@ def position_error(p_est, p_true):
     return total, rng, cross
 
 
+def _fit(pts, A_est, a, c):
+    d = limb_directions(pts, A_est)
+    return fit_horizon_ellipsoid(d, a, c) if c != a else fit_horizon_sphere(d, a)
+
+
+REFINE_ITERATIONS = 2    # measured on Day 10: 1 pass leaves -0.13 px on a thin crescent (+0.66 % range), 2 passes -0.05 px (<0.1 %); 3 adds nothing
+
+
 def position_from_image(image, A_est, s, background=BACKGROUND, read_noise=READ_NOISE, a=R_EQ, c=R_POL,
-                        min_points=MIN_LIMB_POINTS, return_points=False):
-    """The whole optical-navigation step for one image: limb -> directions -> fit. None = no solution."""
+                        min_points=MIN_LIMB_POINTS, refine=True, iterations=REFINE_ITERATIONS, return_points=False):
+    """The whole optical-navigation step for one image: limb -> directions -> fit. None = no solution.
+    refine=True (default): the 50 %-rule limb gives a first position, which supplies the shading shape for the
+    predicted-profile edge fit (`refine_limb`); the refined points are fitted again, and the pass is repeated
+    `iterations` times so the shape comes from an ever better position. refine=False: the 50 % rule only."""
     pts = find_limb(image, A_est, s, background, read_noise)
     if len(pts) < min_points:
         return (None, pts) if return_points else None
-    d = limb_directions(pts, A_est)
     try:
-        p = fit_horizon_ellipsoid(d, a, c) if c != a else fit_horizon_sphere(d, a)
+        p = _fit(pts, A_est, a, c)
+        if refine:
+            for _ in range(iterations):
+                pts2 = refine_limb(image, A_est, s, p, background, read_noise, R=a)
+                if len(pts2) < min_points:
+                    break
+                pts, p = pts2, _fit(pts2, A_est, a, c)
     except (ValueError, np.linalg.LinAlgError):
         return (None, pts) if return_points else None
     return (p, pts) if return_points else p
