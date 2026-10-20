@@ -195,3 +195,36 @@ def test_position_from_image_uses_the_profile_fit_by_default():
     assert abs(rng_err) / LUNAR < 0.003 and cross / LUNAR < 0.002
     p_raw = position_from_image(img, TOWARD_EARTH, s, BACKGROUND, READ_NOISE, a=R_EQ, c=R_EQ, refine=False)
     assert abs(position_error(p_raw, p)[1]) > abs(rng_err)             # the old rule is worse
+
+
+def test_shift_search_matches_the_plain_loop():
+    """Day 12: the per-line shift search is vectorised over the 161 shifts (the campaign's bottleneck). It must pick
+    exactly what the plain loop picks: same best shift, same amplitude, same residual, same 'no fit' cases."""
+    from tracker.limb import SHIFTS, _fit_shift
+    rng = np.random.default_rng(0)
+    r_fine = np.arange(0.0, 80.0, 0.05)
+    for trial in range(20):
+        edge = rng.uniform(30.0, 60.0)
+        blurred = 1.0 / (1.0 + np.exp((r_fine - edge) / rng.uniform(0.5, 2.0)))     # a soft step
+        r_obs = np.arange(edge - 14.0, edge + 8.0, 0.25) + rng.uniform(-0.3, 0.3)
+        obs = rng.uniform(100, 3000) * np.interp(r_obs - rng.uniform(-3, 3), r_fine, blurred) + rng.normal(0, 20, len(r_obs))
+        if trial == 19:
+            obs = -obs                                                   # negative amplitude: the loop returns None
+        best = None
+        for delta in SHIFTS:
+            m = np.interp(r_obs - delta, r_fine, blurred, left=blurred[0], right=0.0)
+            mm = m @ m
+            if mm <= 0:
+                continue
+            A_amp = (m @ obs) / mm
+            res = float(((obs - A_amp * m) ** 2).sum())
+            if best is None or res < best[0]:
+                best = (res, delta, A_amp)
+        if best is not None and best[2] <= 0:
+            best = None
+        got = _fit_shift(obs, r_obs, r_fine, blurred)
+        if best is None:
+            assert got is None
+        else:
+            assert got is not None and got[1] == best[1]
+            assert np.isclose(got[0], best[0], rtol=1e-9) and np.isclose(got[2], best[2], rtol=1e-9)

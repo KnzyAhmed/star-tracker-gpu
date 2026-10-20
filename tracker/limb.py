@@ -129,6 +129,28 @@ SHIFTS = np.arange(-4.0, 4.0 + 1e-9, 0.05)    # px: edge shifts tried per line
 WINDOW_IN, WINDOW_OUT = 14.0, 8.0             # px: fit window around the predicted edge
 
 
+def _fit_shift(obs, r_obs, r_fine, blurred, shifts=SHIFTS):
+    """The per-line shift search of refine_limb, vectorised over the shifts (the Day 12 campaign's bottleneck
+    was this loop: 161 shifts x 180 lines x 2 passes per frame). For every shift delta the model is
+    A * blurred(r_obs - delta) with A by linear least squares; returns (residual, delta, A) of the smallest
+    residual, or None if no shift gives a positive amplitude. Same arithmetic and same tie-break (first
+    smallest) as a plain loop, so results are unchanged."""
+    M = np.interp((r_obs[None, :] - shifts[:, None]).ravel(), r_fine, blurred,
+                  left=blurred[0], right=0.0).reshape(len(shifts), len(r_obs))
+    mm = np.einsum("ij,ij->i", M, M)
+    ok = mm > 0
+    if not ok.any():
+        return None
+    amp = np.zeros(len(shifts))
+    amp[ok] = (M[ok] @ obs) / mm[ok]
+    res = ((obs[None, :] - amp[:, None] * M) ** 2).sum(axis=1)
+    res[~ok] = np.inf
+    k = int(np.argmin(res))
+    if amp[k] <= 0:
+        return None
+    return float(res[k]), float(shifts[k]), float(amp[k])
+
+
 def refine_limb(image, A_est, s, p0, background, read_noise, R=6378.137, sigma_psf=SIGMA_PSF,
                 n_lines=180, margin_deg=15.0, min_points=20, min_contrast=MIN_CONTRAST):
     """Limb points by fitting the PREDICTED blurred edge profile on every scan line.
@@ -146,12 +168,27 @@ def refine_limb(image, A_est, s, p0, background, read_noise, R=6378.137, sigma_p
     (uc, vc), angles, r, prof = scan
     p0 = np.asarray(p0, dtype=np.float64)
     s = np.asarray(s, dtype=np.float64)
-    r_fine = np.arange(0.0, r[-1] + WINDOW_OUT + 6 * sigma_psf, FINE)
+    k_end = len(np.arange(0.0, r[-1] + WINDOW_OUT + 6 * sigma_psf, FINE))     # the fine lattice is k * FINE, k < k_end
     kern_x = np.arange(-4 * sigma_psf, 4 * sigma_psf + 1e-9, FINE)
     kern = np.exp(-0.5 * (kern_x / sigma_psf) ** 2)
     kern /= kern.sum()
+    # Only the fit window matters, so the fine profile is built around the model edge, not from the disc centre:
+    # a coarse pass on the scan grid locates the edge, then the fine lattice covers the window plus the shift
+    # range plus the PSF support on each side. Same lattice points as the full line, so the result is unchanged.
+    margin_in = WINDOW_IN + SHIFTS[-1] + 4 * sigma_psf + 2 * STEP
+    margin_out = WINDOW_OUT - SHIFTS[0] + 4 * sigma_psf + 2 * STEP
+    cos_a, sin_a = np.cos(angles), np.sin(angles)
+    coarse_hit, _ = _ray_hits(p0, (unproject((uc + r[None, :] * cos_a[:, None]).ravel(),
+                                             (vc + r[None, :] * sin_a[:, None]).ravel()) @ A_est), R, R)
+    coarse_hit = coarse_hit.reshape(len(angles), len(r))
     pts = []
     for i, ang in enumerate(angles):
+        if not coarse_hit[i].any():
+            continue
+        r_c = r[np.flatnonzero(coarse_hit[i])[-1]]
+        k0 = max(0, int(np.floor((r_c - margin_in) / FINE)))
+        k1 = min(k_end, int(np.ceil((r_c + margin_out) / FINE)) + 1)
+        r_fine = np.arange(k0, k1) * FINE
         # predicted unblurred shape along this line for a sphere at p0
         u = uc + r_fine * np.cos(ang)
         v = vc + r_fine * np.sin(ang)
@@ -164,6 +201,8 @@ def refine_limb(image, A_est, s, p0, background, read_noise, R=6378.137, sigma_p
         shape[hit] = np.maximum(0.0, (x / np.linalg.norm(x, axis=1, keepdims=True)) @ s)
         r_edge0 = r_fine[hit].max()                                # the model limb along this line
         blurred = np.convolve(shape, kern, mode="same")
+        if k0 > 0:
+            blurred[: len(kern) // 2] = np.nan        # polluted by the window's zero padding; never sampled
         # observed samples in a window around the predicted edge
         win = (r > r_edge0 - WINDOW_IN) & (r < r_edge0 + WINDOW_OUT) & (r < r[-1] - 1.0)
         if win.sum() < 10:
@@ -173,17 +212,8 @@ def refine_limb(image, A_est, s, p0, background, read_noise, R=6378.137, sigma_p
             continue                                               # too faint to fit (terminator side)
         r_obs = r[win]
         # try every shift: model(r) = A * blurred(r - delta); A by linear least squares; pick the best residual
-        best = None
-        for delta in SHIFTS:
-            m = np.interp(r_obs - delta, r_fine, blurred, left=blurred[0], right=0.0)
-            mm = m @ m
-            if mm <= 0:
-                continue
-            A_amp = (m @ obs) / mm
-            res = float(((obs - A_amp * m) ** 2).sum())
-            if best is None or res < best[0]:
-                best = (res, delta, A_amp)
-        if best is None or best[2] <= 0:
+        best = _fit_shift(obs, r_obs, r_fine, blurred)
+        if best is None:
             continue
         # parabolic refinement of delta around the best grid point
         k = int(round((best[1] - SHIFTS[0]) / 0.05))
