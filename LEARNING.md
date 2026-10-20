@@ -943,3 +943,104 @@ Answer: precision is a per-kernel decision driven by the maths. Star blobs are s
 10⁻⁷ relative, invisible. The Earth limb is a discontinuity decided by a cancelling discriminant at 10⁵ km scale: float32 flips edge
 rays, each flip is a 190-count jump, and the CPU-match gate fails. Doubles there cost milliseconds on a T4. Mixed precision, chosen
 where it matters, is the normal engineering answer.
+
+## Day 12: the optical-navigation campaign
+
+### `trial_geometry(seed, trial, distance, phase_deg)` (`tracker/opnav_campaign.py`)
+
+**What it does.** Turns a trial number into one complete scene: where the spacecraft is, where the Sun is, and where the Earth
+camera points. Everything random comes from `default_rng([seed, trial, 0])` in a fixed order (direction to Earth, Sun azimuth,
+camera offset, offset azimuth, roll), and none of the draws depends on the cell, so trial 17 is the *same* sky, Sun azimuth and roll
+at every distance, phase and noise level: the sweeps are paired comparisons, like Day 5's.
+
+**IN / OUT.** seed, trial (ints), distance (km), phase angle (deg) → `p` (3,) km, `s` (3,) unit Earth→Sun, `A` (3, 3) sky→camera,
+pixel radius (px), offset of Earth's centre from the image centre (px).
+
+**Worked example.** GEO, phase 90°, trial draws p̂ = (1, 0, 0). The Sun must sit 90° from p̂ (phase angle = angle at Earth between
+Earth→spacecraft and Earth→Sun), so s = cos 90° p̂ + sin 90° (cos az e₁ + sin az e₂) is any unit vector in the y–z plane, e.g.
+(0, 1, 0) for az = 0. Pixel radius F_PIX tan(arcsin(6378.137/42164)) = 2903.7 × 0.1530 = 444.4 px, so the offset is drawn uniformly
+in a disc of radius 511.5 − 10 − 444.4 = 57.1 px (√u scaling makes it uniform over the disc, not over the radius): the whole disc
+stays in the frame with a 10 px margin. 57.1 px is arctan(57.1/2903.7) = 1.13° of boresight tilt away from −p̂. At 1,000,000 km the
+disc is 18.5 px and the offset can reach 483 px: Earth may sit near a corner.
+
+**Why this way, and the wrong way.** The wrong way is to point the camera straight at Earth every time: then the limb always sits at
+the same place on the sensor, lens-centre symmetry hides any off-axis bias of the limb finder, and the 1,000 trials measure only
+noise. Drawing the offset from the sensor geometry exercises the real pinhole asymmetry (the projected disc is an ellipse off-axis,
+`earth_bbox`'s 1/cos² stretch). Keeping the whole disc inside is a deliberate scope choice for Stage 1 (a partial Earth is a
+different, harder problem); it is written in `EDGE_MARGIN_PX`, not hidden.
+
+**Interview question.** *"Why is the same trial number the same sky in every cell?"* Answer: common random numbers. Comparing
+"noise 5 vs noise 10" on the same 1,000 skies removes the sky-to-sky variance from the difference, so a 0.02 % shift in the median is
+detectable with 1,000 trials where independent samples would need far more. It also makes any row reproducible from (seed, trial)
+alone, which is what lets an interrupted run resume and lets the CPU and the GPU produce the same rows.
+
+### `score_position`, `solve_trial` and the three outcomes (`tracker/opnav_campaign.py`)
+
+**What it does.** `solve_trial` runs the Day 10 pipeline on one image with one attitude (tracker or truth), then refits the *same*
+limb points with the sphere model, and classifies: no solution (tracker failed / < 20 limb points / fit raised, with the reason),
+correct (total error < 1 % of the true distance), wrong (≥ 1 %).
+
+**Worked example.** At 100,000 km the threshold is 1,000 km. A typical solved trial there has 10–20 km of error (0.01–0.02 %): correct
+by a factor of 50. A fit that locked onto the terminator would place Earth's centre ~r/2 off and misjudge the radius by tens of %:
+wrong by a factor of 10 or more. There is no trial in the smoke run near the threshold except where the disc is tiny (beyond
+560,000 km), which is exactly where the campaign is meant to find the method's edge.
+
+**Why relative, not km.** Every error source scales with distance: a limb bias of δ px gives a range error of δ/r_px of the range,
+and r_px ∝ 1/D; an attitude error of ε rad gives a cross-range error of ε D. A fixed km threshold would call GEO "wrong" for
+errors that are excellent at lunar distance, or the reverse.
+
+**Interview question.** *"Why store 'wrong' separately from 'no solution'?"* Answer: they are different failures with different
+consequences. "No solution" is honest: the filter upstream keeps its last estimate and waits. "Wrong" is a confident bad fix that
+a Kalman filter would swallow; it has to be counted on its own and driven toward zero, as on Day 5 (0 wrong in 220,000).
+
+### Why the campaign ran on the Mac and not on the T4 (Amdahl, again)
+
+Per trial the GPU renders Earth in 3 ms and the stars in well under 1 ms. The CPU then spends ~300 ms finding and refining the limb
+(two profile-fit passes of 180 small least-squares problems) and ~20 ms on the second head's star tracker. Colab's host has 2 slow
+vCPUs; the M1 Pro has 10 fast cores. 96,000 trials with two solves each: Colab ≈ 14 h, Mac ≈ 3–4 h, even though the Mac renders a GEO
+Earth in 1.35 s instead of 3 ms. The GPU stage is 1 % of the work; speeding it up by 400× saves 1 %. The honest record is: the GPU
+makes the *render* negligible (Day 11), the campaign's cost is the CPU fit, and the Day 6 lesson repeats. The T4 still ran one full
+GEO cell on the GPU backend plus the row-equality test, so the GPU path is verified on the campaign's own code, not just on examples.
+
+### Error bars: why not the least-squares covariance of 180 limb points
+
+**The trap.** A horizon fit returns a covariance "for free", and with 180 points it looks tiny: σ_single/√180 = 7.5 % of one point's
+scatter. But the 180 points are not independent measurements. On a 48 px radius (lunar distance) the scan lines are
+2π × 48 / 180 = 1.68 px apart while the PSF is σ = 1.2 px (FWHM 2.8 px): neighbouring points read the *same* blurred pixels and the
+same noise, so their errors are correlated and the effective number of independent points is far smaller than 180. At GEO
+(444 px radius) the spacing is 15.5 px and the points are nearly independent, so the covariance is only badly wrong where the
+accuracy is worst.
+
+**What I report instead.** The spread over Monte Carlo trials: percentiles (median, p95) of the error per cell, Wilson intervals for
+the rates, and a bootstrap over *trials* for the median's interval (`analyze_opnav.boot_median`). Each trial has fresh noise, a fresh
+sky and a fresh geometry, so trials are independent and their spread is the honest uncertainty of one fix.
+
+**Interview question.** *"Your range error at lunar distance is 0.1 %. How do you know?"* Answer: from 1,000 independent trials per
+cell, not from one fit's covariance. The limb points of one frame share the blur, so a per-fit error bar would understate the error;
+the Monte Carlo spread is the number a navigation filter should be given as its measurement noise.
+
+### `limb._fit_shift`: the vectorised shift search (why it is bit-identical and 3× faster)
+
+**What changed.** `refine_limb` tried 161 edge shifts per scan line in a Python loop (161 × 180 × 2 passes = 58,000 interpolations
+per frame) and built the predicted profile on a 0.05 px grid from the disc centre outward (9,000 samples per line at GEO) although
+only a 22 px window around the edge is ever used. Now all 161 shifts form one (161 × n_obs) matrix: amplitude A = (m·obs)/(m·m) per
+row, residuals in one expression, `argmin`. The fine profile is built only around the model edge, located by a coarse pass on the
+scan grid, and on the *same* lattice k × 0.05 px, so every sampled value is the same number as before.
+
+**Why bit-identical matters.** The Day 10 numbers were approved on the old code. I regenerated the Day 10 bias table after the
+change: identical to every printed digit. A speed-up that changed the numbers would have to be re-validated as a new method; one
+that does not is just engineering. Full pipeline 1,050 → 368 ms per GEO frame; it is what makes 144,000 solves fit in an afternoon.
+
+**Interview question.** *"How do you make a numerical refactor safe?"* Answer: keep the arithmetic the same (same products, same
+lattice, same tie-break), write a test that compares against the plain loop on random inputs, and regenerate a previously approved
+result table and diff it. Speed is checked last.
+
+### Precision, revisited with measurements (what the Day 11 reasoning got right and wrong)
+
+Day 11 chose double for `earth.cu` arguing that float32 would flip edge sub-rays and that doubles are cheap. Day 12 measured both
+claims on the T4 with the kernel compiled as float (`-DREAL_T=float`): float32 changes 30 % of Earth pixels at GEO (max 27 counts),
+flips one mask pixel in three frames, moves limb points by at most 0.04 px and the range error by < 0.03 percentage points.
+Kernel time: 2.65 ms per frame in double vs 0.27 ms in float32, a 10× cost, not "cheap" relative to itself, but 1 % of the per-trial
+CPU work. So: the accuracy argument was weaker than I wrote (float32 would have been fine for navigation), the cost was larger than I
+wrote (10×), and the decision still stands for the right reason, which is exactness against the CPU reference (4 × 10⁻⁷ px on the
+limb) that makes CPU rows and GPU rows interchangeable. Writing the correction down is part of the method.
