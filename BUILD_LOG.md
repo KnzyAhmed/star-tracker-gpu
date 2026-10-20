@@ -534,9 +534,12 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   points (GEO +0.0001 → +0.0007 %, lunar crescent +0.025 → +0.005 %). So float32 would have been accurate enough;
   I kept **double** because the Day 11 gate is "GPU image equals CPU image", which float32 cannot pass at a hit/miss
   edge with |p| ~ 10⁵ km (a 1e-7 relative error in the discriminant flips sub-rays), and because an exact CPU reference
-  is what lets the CPU campaign rows stand in for GPU rows. T4 cost of double: the kernel + blur runs 4.07 ms per
-  Earth-pointing frame (Day 11); the float32 variant (`render_earth_batch(precision="float32")`, `-DREAL_T=float`)
-  is timed in the same Colab check before the campaign and recorded in part 2 below.
+  is what lets the CPU campaign rows stand in for GPU rows. **T4 cost of double, measured** (`gpu_check --earth`, 128 Earth-pointing frames GEO to lunar, median of 3): kernel
+  only 2.65 ms/frame in double vs 0.27 ms in float32 (`-DREAL_T=float`), i.e. **~10× slower**; with the PSF blur 3.03 vs
+  0.67 ms. On the T4 itself float32 changed 30 % of Earth pixels at GEO (max 27 counts), flipped 1 mask pixel in
+  three frames, moved limb points by at most 0.04 px and the range error by < 0.03 percentage points. So the double
+  decision buys CPU-equals-GPU exactness (4.4e-7 px on the limb) for 2.4 ms per frame, which is nothing next to the
+  ~300 ms CPU limb fit per frame; if the fit ever moved to the GPU, float32 would be the right choice there.
 - **Built.** `tracker/opnav_campaign.py`: `trial_geometry(seed, trial, distance, phase)` (direction to Earth uniform,
   Sun azimuth uniform at the requested phase angle, camera offset uniform within the sensor minus 10 px so the whole
   disc is in the frame, roll uniform; the draws do not depend on the cell, so trial k is the same sky in every cell),
