@@ -207,3 +207,27 @@ def test_earth_gpu_same_limb_points():
 def test_earth_gpu_not_in_view_is_empty():
     imgs, masks = _batch([(np.array([42_164.0, 0.0, 0.0]), attitude_from_pointing(0.0, 0.0, 0.0), np.array([1.0, 0.0, 0.0]))])
     assert float(imgs.max()) == 0.0 and not bool(masks.any())
+
+
+def test_opnav_campaign_rows_cpu_equal_gpu():
+    """Day 12: the same trial gives the same row on both backends. Geometry, attitude, outcome and point counts are
+    identical; the position differs only through float32 rounding of the Earth image (Day 11: 7e-4 counts ->
+    limb 4e-7 px), i.e. metres at most."""
+    from tracker.catalog import load_catalog
+    from tracker.identify import build_pair_table
+    from tracker.opnav_campaign import COLUMNS, run_batch
+    cat = load_catalog(5.5)
+    table = build_pair_table(cat.r)
+    k = {name: i for i, name in enumerate(COLUMNS)}
+    for distance in (42_164.0, 384_400.0):
+        kw = dict(seed=9, distance=distance, phase=90.0, read_noise=5.0, catalog=cat, table=table, true_attitude=True)
+        c = run_batch(np.arange(2), backend="cpu", **kw)
+        g = run_batch(np.arange(2), backend="gpu", **kw)
+        assert c.shape == g.shape == (4, len(COLUMNS))
+        exact = [k[n] for n in ("trial", "distance", "phase", "read_noise", "att_src", "px", "py", "pz", "sx", "sy", "sz",
+                                "pixel_radius", "offset_px", "reason", "n_limb", "outcome")]
+        assert np.array_equal(c[:, exact], g[:, exact])
+        att = [k[n] for n in ("att_total", "att_pointing", "att_roll")]
+        np.testing.assert_allclose(c[:, att], g[:, att], rtol=1e-6, atol=1e-6)
+        pos = [k[n] for n in ("total_km", "range_km", "cross_km", "total_sphere_km", "range_sphere_km")]
+        np.testing.assert_allclose(c[:, pos], g[:, pos], atol=0.01)       # 10 m

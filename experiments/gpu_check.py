@@ -17,7 +17,7 @@ from tracker.batch import pack_frames, project_frames
 from tracker.camera import attitude_from_pointing, random_attitude
 from tracker.catalog import load_catalog
 from tracker.detect_cpu import detect
-from tracker.render_cpu import BACKGROUND, READ_NOISE, render
+from tracker.render_cpu import BACKGROUND, READ_NOISE, SIGMA_PSF, render
 
 BATCH = 128
 
@@ -108,19 +108,38 @@ def earth_check():
         print(f"earth {label:15s}: max |GPU-CPU| {d.max():.2e} counts, masks equal {np.array_equal(cp.asnumpy(masks[k]), cpu_mask)}, "
               f"limb points {len(lg)} vs {len(lc)}, max limb diff {np.abs(lg - lc).max() if same else float('nan'):.1e} px, "
               f"CPU render {t_cpu:.2f} s")
+    # Day 12: what single precision would cost in limb accuracy, and what double costs in time
+    from tracker.opnav import position_error, position_from_image
+    imgs32, masks32 = gpu.render_earth_batch(P, At, S, a=R_EQ, c=R_POL, precision="float32")
+    for k, (label, p, A, s) in enumerate(cases):
+        g64, g32 = cp.asnumpy(imgs[k]), cp.asnumpy(imgs32[k])
+        out = []
+        for name, g in (("double", g64), ("float32", g32)):
+            pe = position_from_image(g + BACKGROUND, A, s, BACKGROUND, READ_NOISE, a=R_EQ, c=R_POL)
+            err = position_error(pe, p) if pe is not None else (float('nan'),) * 3
+            out.append(f"{name}: range {err[1]:+.2f} km ({100 * err[1] / np.linalg.norm(p):+.4f} %), cross {err[2]:.2f} km")
+        l64 = find_limb(g64 + BACKGROUND, A, s, BACKGROUND, READ_NOISE); l32 = find_limb(g32 + BACKGROUND, A, s, BACKGROUND, READ_NOISE)
+        dl = np.abs(l64 - l32).max() if l64.shape == l32.shape else float('nan')
+        print(f"float32 {label:15s}: max |f32-f64| {np.abs(g32 - g64).max():.2e} counts, pixels differing {np.mean(g32 != g64) * 100:.2f} %, "
+              f"mask flips {int((cp.asnumpy(masks32[k]) != cp.asnumpy(masks[k])).sum())}, limb pts max diff {dl:.1e} px | " + " | ".join(out))
     rng = np.random.default_rng(0)
     P = np.array([sample_position(rng, 42_164.0, 400_000.0) for _ in range(BATCH)])
     At = np.array([earth_pointing(p, rng.uniform(-180, 180)) for p in P])
     S = np.array([sample_sun(rng) for _ in range(BATCH)])
-    gpu.render_earth_batch(P[:4], At[:4], S[:4])                              # warm-up (kernel compile)
-    cp.cuda.Device().synchronize()
-    t0 = time.perf_counter()
-    gpu.render_earth_batch(P, At, S, a=R_EQ, c=R_POL)
-    cp.cuda.Device().synchronize()
-    dt = time.perf_counter() - t0
     dist = np.linalg.norm(P, axis=1)
-    print(f"earth GPU timing: {BATCH} Earth-pointing frames, {dist.min():,.0f}-{dist.max():,.0f} km (median {np.median(dist):,.0f}): "
-          f"{dt:.2f} s = {1000 * dt / BATCH:.2f} ms/frame incl. PSF blur")
+    for precision in ("double", "float32"):
+        for sigma in (SIGMA_PSF, 0.0):
+            gpu.render_earth_batch(P[:4], At[:4], S[:4], precision=precision, sigma_psf=sigma)    # warm-up (kernel compile)
+            cp.cuda.Device().synchronize()
+            times = []
+            for _ in range(3):
+                t0 = time.perf_counter()
+                gpu.render_earth_batch(P, At, S, a=R_EQ, c=R_POL, precision=precision, sigma_psf=sigma)
+                cp.cuda.Device().synchronize()
+                times.append(time.perf_counter() - t0)
+            dt = np.median(times)
+            print(f"earth GPU timing [{precision:7s}, {'kernel + PSF blur' if sigma else 'kernel only       '}]: {BATCH} Earth-pointing frames, "
+                  f"{dist.min():,.0f}-{dist.max():,.0f} km (median {np.median(dist):,.0f}): {dt:.3f} s = {1000 * dt / BATCH:.2f} ms/frame (median of 3)")
 
 
 if __name__ == "__main__":

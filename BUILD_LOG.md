@@ -514,3 +514,55 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   before zipping. (2) `test_opnav` exactness tolerance 1e-6 km failed on x86 by 1.5e-6 km (lstsq rounding) → 1e-4 km (10 cm).
   (3) Colab's session-files warning dialog swallowed a typed cell once; Escape does not close it, OK does.
 - Suite (Mac): **185 passed**, 1 skipped; with CUDA: 196 passed.
+
+## 2026-10-20: Day 12, the optical-navigation campaign (part 1: engine, thresholds, estimate)
+
+- **Thresholds, fixed before any campaign trial ran.** Three outcomes per trial, scored on the TOTAL position error
+  against the true distance D:
+  - **no solution**: the second head's star tracker returns nothing, or fewer than 20 limb points survive
+    (`opnav.MIN_LIMB_POINTS`), or the horizon fit raises (|n| ≤ 1). The reason is stored per row.
+  - **correct**: a position was returned and |p_est − p_true| < **1 % of D** (`opnav_campaign.CORRECT_FRACTION`).
+  - **wrong**: a position was returned and the error is ≥ 1 % of D.
+  Why 1 %: the worst honest error I had measured before the campaign was 0.17 % of range (lunar distance, Day 10
+  profile fit on an ellipsoid Earth), so 1 % is about 6× above it, and a fit that locks onto the wrong edge
+  (the terminator, or a star) is off by tens of %, so 1 % is well below that. A relative threshold is the right one
+  because every error source here (limb bias in px, attitude error in arcsec) scales with D.
+- **Precision line for `earth.cu`.** I measured what single precision does by running the CPU reference with the
+  ray–ellipsoid intersection cast to float32 (same arithmetic as the kernel): 30 % of Earth pixels change at GEO
+  (max 48 counts, one flipped sub-ray = 3000/16 ≈ 190 counts × PSF), 7 % at 100,000 km, 0.3 % on the lunar crescent;
+  individual limb points move by at most 0.05 px (median 0.000), and the range error changes by < 0.02 percentage
+  points (GEO +0.0001 → +0.0007 %, lunar crescent +0.025 → +0.005 %). So float32 would have been accurate enough;
+  I kept **double** because the Day 11 gate is "GPU image equals CPU image", which float32 cannot pass at a hit/miss
+  edge with |p| ~ 10⁵ km (a 1e-7 relative error in the discriminant flips sub-rays), and because an exact CPU reference
+  is what lets the CPU campaign rows stand in for GPU rows. T4 cost of double: the kernel + blur runs 4.07 ms per
+  Earth-pointing frame (Day 11); the float32 variant (`render_earth_batch(precision="float32")`, `-DREAL_T=float`)
+  is timed in the same Colab check before the campaign and recorded in part 2 below.
+- **Built.** `tracker/opnav_campaign.py`: `trial_geometry(seed, trial, distance, phase)` (direction to Earth uniform,
+  Sun azimuth uniform at the requested phase angle, camera offset uniform within the sensor minus 10 px so the whole
+  disc is in the frame, roll uniform; the draws do not depend on the cell, so trial k is the same sky in every cell),
+  `score_position`, `solve_trial` (ellipsoid fit, then the sphere model on the same points), `render_trials`
+  (CPU or GPU: stars with occlusion + Earth + counter noise; the second head's star frame with its own noise key),
+  `solve_rows`, `run_batch`, `run_condition` (resume; `workers` processes on the CPU backend). Rows carry the
+  position, Sun, pixel radius, offset, the head tracker's attitude error, the reason, limb count, outcome, total /
+  range / cross-range error and the sphere-model error. Nominal-noise cells get a second row per trial solved with the
+  TRUE attitude (`att_src` 1) so the star tracker's share of the error can be separated. 9 tests
+  (`tests/test_opnav_campaign.py`), plus a GPU-only CPU-equals-GPU row test in `tests/test_gpu.py`.
+- **Speed-up that made the campaign feasible.** `refine_limb` took 0.5 s per pass at GEO: a Python loop over 161
+  shifts × 180 lines, and the predicted profile sampled at 0.05 px from the disc centre out (9,000 samples per line).
+  Now the shift search is one vectorised least-squares over all shifts (`limb._fit_shift`, exactness test against the
+  plain loop) and the fine profile is built only around the model edge on the same lattice. Results are bit-identical
+  (the Day 10 bias table regenerates unchanged); full pipeline 1,050 → 368 ms at GEO, 528 → 246 ms at lunar distance.
+- **Smoke run** (5 trials per cell, 10 processes, 90 s): 480 trials, 2 "too few limb points", 0 tracker failures;
+  tracker pointing error median 7.8" (the head's roll error becomes the Earth camera's pointing error, as expected
+  for a 90° mount), cross-range median 7 km with the tracker vs 1 km with the true attitude. Range error median
+  0.005 % at GEO rising to 0.09 % at 420,000 km; beyond ~560,000 km (disc radius < 33 px) half the trials fail the
+  1 % threshold and at 1,000,000 km (18 px) the median is 2.3 %: the limb finder's fixed windows (plateau read
+  6 px inside the edge, fit window 14 px inside) are wider than the disc. That is a finding the campaign will
+  report, not something to tune away before running.
+- **Estimate.** 12 distances × 4 phases × 2 noise levels × 1,000 = **96,000 trials**, 144,000 solves (the nominal-noise
+  cells are solved twice, tracker and true attitude), 144,000 rows. Measured CPU cost ≈ 0.96 core-seconds per trial
+  (render + head tracker + two solves) → ≈ 26 core-hours → **≈ 3 h on the M1 Pro's 10 cores** on mains power.
+  On Colab the GPU part is small (≈ 8 min of Earth + star rendering) but the limb fit is CPU work on a 2-vCPU host
+  about 2× slower than the M1: ≈ 14 h, beyond a session. Decision (to be approved): the campaign runs on the Mac with
+  the CPU backend; Colab runs the GPU checks (CPU-equals-GPU rows, float32 cost and timing) and one full GEO cell on
+  the GPU backend as the record that the GPU path produces the same rows.
