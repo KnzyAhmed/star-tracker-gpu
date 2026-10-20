@@ -10,6 +10,13 @@
 // jump in one pixel. Doubles make the GPU image agree with the CPU to float32 rounding, which is the Day 11 gate.
 // Output pixels are float32. (The Tesla T4 does ~250 GFLOP/s in double: 13 M rays per GEO frame take milliseconds.)
 
+// REAL_T selects the geometry precision: double (default, the shipped kernel) or float, compiled with
+// -DREAL_T=float by gpu.render_earth_batch(precision="float32") for the Day 12 cost/accuracy comparison.
+#ifndef REAL_T
+#define REAL_T double
+#endif
+typedef REAL_T real;
+
 extern "C" __global__ void earth_kernel(
     const double* __restrict__ p,        // (3,) spacecraft position, km, world frame
     const double* __restrict__ A,        // (9,) attitude, row-major, sky -> camera
@@ -31,49 +38,56 @@ extern "C" __global__ void earth_kernel(
         return;
     const int u = u0 + ix, v = v0 + iy;
 
-    const double inv_a = 1.0 / a, inv_c = 1.0 / c;
-    const double psx = p[0] * inv_a, psy = p[1] * inv_a, psz = p[2] * inv_c;          // scaled position
-    const double C = psx * psx + psy * psy + psz * psz - 1.0;
-    const double inv_a2 = inv_a * inv_a, inv_c2 = inv_c * inv_c;
+    // every input is converted to the working precision ONCE, so the float32 variant really is float32
+    const real P0 = (real)p[0], P1 = (real)p[1], P2 = (real)p[2];
+    const real S0 = (real)s[0], S1 = (real)s[1], S2 = (real)s[2];
+    real R[9];
+    for (int k = 0; k < 9; ++k)
+        R[k] = (real)A[k];
+    const real fp = (real)f_pix, cpx = (real)c_pix;
+    const real inv_a = real(1) / (real)a, inv_c = real(1) / (real)c;
+    const real psx = P0 * inv_a, psy = P1 * inv_a, psz = P2 * inv_c;          // scaled position
+    const real C = psx * psx + psy * psy + psz * psz - real(1);
+    const real inv_a2 = inv_a * inv_a, inv_c2 = inv_c * inv_c;
 
-    double light = 0.0;
+    real light = real(0);
     int hits = 0;
     for (int ky = 0; ky < ss; ++ky) {
-        const double dv = (ky + 0.5) / ss - 0.5;
+        const real dv = ((real)ky + real(0.5)) / (real)ss - real(0.5);
         for (int kx = 0; kx < ss; ++kx) {
-            const double du = (kx + 0.5) / ss - 0.5;
+            const real du = ((real)kx + real(0.5)) / (real)ss - real(0.5);
             // camera-frame ray (unproject), then world frame: d = b @ A
-            double bx = ((double)u + du - c_pix) / f_pix;
-            double by = ((double)v + dv - c_pix) / f_pix;
-            double bz = 1.0;
-            const double bn = 1.0 / sqrt(bx * bx + by * by + 1.0);
+            real bx = ((real)u + du - cpx) / fp;
+            real by = ((real)v + dv - cpx) / fp;
+            real bz = real(1);
+            const real bn = real(1) / sqrt(bx * bx + by * by + real(1));
             bx *= bn; by *= bn; bz *= bn;
-            const double dx = bx * A[0] + by * A[3] + bz * A[6];
-            const double dy = bx * A[1] + by * A[4] + bz * A[7];
-            const double dz = bx * A[2] + by * A[5] + bz * A[8];
+            const real dx = bx * R[0] + by * R[3] + bz * R[6];
+            const real dy = bx * R[1] + by * R[4] + bz * R[7];
+            const real dz = bx * R[2] + by * R[5] + bz * R[8];
             // ray-ellipsoid in scaled space
-            const double dsx = dx * inv_a, dsy = dy * inv_a, dsz = dz * inv_c;
-            const double Aq = dsx * dsx + dsy * dsy + dsz * dsz;
-            const double Bq = 2.0 * (dsx * psx + dsy * psy + dsz * psz);
-            const double disc = Bq * Bq - 4.0 * Aq * C;
-            if (disc <= 0.0)
+            const real dsx = dx * inv_a, dsy = dy * inv_a, dsz = dz * inv_c;
+            const real Aq = dsx * dsx + dsy * dsy + dsz * dsz;
+            const real Bq = real(2) * (dsx * psx + dsy * psy + dsz * psz);
+            const real disc = Bq * Bq - real(4) * Aq * C;
+            if (disc <= real(0))
                 continue;
-            const double t = (-Bq - sqrt(disc)) / (2.0 * Aq);
-            if (t <= 0.0)
+            const real t = (-Bq - sqrt(disc)) / (real(2) * Aq);
+            if (t <= real(0))
                 continue;
             ++hits;
             if (shade) {
-                const double x = p[0] + t * dx, y = p[1] + t * dy, z = p[2] + t * dz;
-                double nx = x * inv_a2, ny = y * inv_a2, nz = z * inv_c2;              // ellipsoid normal
-                const double nn = 1.0 / sqrt(nx * nx + ny * ny + nz * nz);
-                const double cosi = (nx * s[0] + ny * s[1] + nz * s[2]) * nn;
-                light += cosi > 0.0 ? cosi : 0.0;
+                const real x = P0 + t * dx, y = P1 + t * dy, z = P2 + t * dz;
+                real nx = x * inv_a2, ny = y * inv_a2, nz = z * inv_c2;              // ellipsoid normal
+                const real nn = real(1) / sqrt(nx * nx + ny * ny + nz * nz);
+                const real cosi = (nx * S0 + ny * S1 + nz * S2) * nn;
+                light += cosi > real(0) ? cosi : real(0);
             } else {
-                light += 1.0;
+                light += real(1);
             }
         }
     }
     const long long idx = (long long)v * n_pix + u;
-    out[idx] = (float)(brightness * light / (double)(ss * ss));
+    out[idx] = (float)((real)brightness * light / (real)(ss * ss));
     mask[idx] = hits > 0 ? 1 : 0;
 }

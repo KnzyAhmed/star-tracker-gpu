@@ -32,3 +32,9 @@ def test_there_are_kernels():
 def test_kernel_compiles(cu):
     r = subprocess.run(CMD + [str(cu)], capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
+
+
+def test_earth_kernel_compiles_in_float32_too():
+    """gpu.render_earth_batch(precision="float32") compiles earth.cu with -DREAL_T=float (Day 12 comparison)."""
+    r = subprocess.run(CMD + ["-DREAL_T=float", str(ROOT / "tracker" / "kernels" / "earth.cu")], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr

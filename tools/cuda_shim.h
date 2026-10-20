@@ -13,6 +13,7 @@ __device__ float expf(float);
 __device__ float logf(float);
 __device__ float sqrtf(float);
 __device__ double sqrt(double);
+__device__ float sqrt(float);
 __device__ float cosf(float);
 __device__ int min(int, int);
 __device__ int max(int, int);

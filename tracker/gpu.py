@@ -17,9 +17,9 @@ BLOCK = 16                       # 16 x 16 threads per block (spec)
 
 
 @functools.cache
-def _kernel(filename, name):
+def _kernel(filename, name, options=()):
     """Compile once per process (NVRTC); later calls reuse the compiled kernel."""
-    return cp.RawKernel((KERNELS / filename).read_text(), name)
+    return cp.RawKernel((KERNELS / filename).read_text(), name, options=tuple(options))
 
 
 def render_batch(batch, seed=0, frame_ids=None, background=BACKGROUND, read_noise=READ_NOISE,
@@ -104,11 +104,13 @@ def add_hot_pixels_batch(images, draws):
 
 
 def render_earth_batch(positions, attitudes, suns, a=None, c=None, supersample=4, brightness=None, shade=True,
-                       sigma_psf=None, n_pix=N_PIX):
+                       sigma_psf=None, n_pix=N_PIX, precision="double"):
     """Earth for F frames on the GPU -> (images (F, n_pix, n_pix) float32 CuPy, masks (F, n_pix, n_pix) bool CuPy).
     Same contract as earth_render.render_earth per frame: Earth only, no background or noise, PSF-blurred.
     positions (F, 3) km, attitudes (F, 3, 3), suns (F, 3). Bounding boxes come from the host (earth_render.earth_bbox),
-    one kernel launch per frame over its box (16 x 16 threads per block)."""
+    one kernel launch per frame over its box (16 x 16 threads per block).
+    precision: "double" (the shipped kernel: the limb is a hit/miss cliff at |p| ~ 1e5 km) or "float32", kept only to
+    measure what single precision costs in limb accuracy and what double costs in time (Day 12 log)."""
     from cupyx.scipy.ndimage import gaussian_filter
     from tracker.camera import C_PIX, F_PIX
     from tracker.earth_render import earth_bbox
@@ -121,7 +123,9 @@ def render_earth_batch(positions, attitudes, suns, a=None, c=None, supersample=4
     F = len(positions)
     images = cp.zeros((F, n_pix, n_pix), dtype=cp.float32)
     masks = cp.zeros((F, n_pix, n_pix), dtype=cp.uint8)
-    kernel = _kernel("earth.cu", "earth_kernel")
+    if precision not in ("double", "float32"):
+        raise ValueError("precision must be 'double' or 'float32'")
+    kernel = _kernel("earth.cu", "earth_kernel", ("-DREAL_T=float",) if precision == "float32" else ())
     for f in range(F):
         box = earth_bbox(positions[f], attitudes[f], a, c, n_pix)
         if box is None:
