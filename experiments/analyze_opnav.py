@@ -199,8 +199,9 @@ def main():
         L += [f"  {label:26s}: " + "  ".join(f"{d:,.0f}: {m:+.3f} [{lo:+.3f},{hi:+.3f}]" for d, (m, lo, hi, p9, n) in zip(x, v))]
     ax.axhline(0, color=ac.INK2, lw=1)
     ax.set_xscale("log")
+    ax.set_ylim(-0.05, 0.45)                       # the 1,000,000 km points (> 1 %) are off scale on purpose: tiny-disc regime
     ax.set(xlabel="distance from Earth's centre (km)", ylabel="signed range error (%)",
-           title="Oblateness: fitting a sphere to the real (oblate) Earth biases the range")
+           title="Oblateness: fitting a sphere to the real (oblate) Earth biases the range\n(y clipped at 0.45 %; the 1,000,000 km points are above 1 %)")
     ax.legend(frameon=False, fontsize=8)
     fig.tight_layout()
     fig.savefig(out / "sphere_vs_ellipsoid.png", **ac.SAVE)

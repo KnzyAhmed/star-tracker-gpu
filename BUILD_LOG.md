@@ -569,3 +569,43 @@ not the catalog's 266k. Each star has ~26 pairs voting for it, so the trade-off 
   about 2× slower than the M1: ≈ 14 h, beyond a session. Decision (to be approved): the campaign runs on the Mac with
   the CPU backend; Colab runs the GPU checks (CPU-equals-GPU rows, float32 cost and timing) and one full GEO cell on
   the GPU backend as the record that the GPU path produces the same rows.
+
+## 2026-10-21: Day 12, part 2: the campaign ran, and what it says
+
+- **Run.** 96 cells × 1,000 trials = 96,000 trials, 144,000 rows (48,000 true-attitude solves), **13,215 s = 3 h 40 min** on the
+  M1 Pro with 10 processes (CPU backend). The first phase-0 sweep was the slowest (whole-circle limb, true-attitude rows, GEO render
+  on the CPU: 432 s for the GEO cell); the 2× noise cells with small discs ran at 30 ms per trial. A loose charger interrupted
+  nothing but cost an hour of worry: the run is resumable, and the log told me it was alive. Results: `results/opnav/*.csv`
+  (ignored), analysis in `docs/results/day12/` (`report.txt`, `summary.json`, five figures, dark versions for the site).
+- **GPU record (Colab T4, private account).** 65 GPU/campaign tests pass on the T4. One full GEO phase-90 cell on the GPU backend:
+  1,434 s (1.43 s per trial: the limb fit on one Colab vCPU, as estimated). Its 2,000 rows against the Mac's: every geometry,
+  outcome, reason and limb-count column identical; attitude errors within 4.7e-5 arcsec; positions within 0.14 km (0.6 km for the
+  sphere refit), i.e. 3 parts in 10⁶ of the range, from float32 rounding of the Earth image through the two refinement passes.
+  The row-equality test in `test_gpu.py` (10 m tolerance on 4 trials) is tighter than this worst case over 1,000 trials; I keep the
+  test as it is and record the 1,000-trial number here. The runtime was deleted after the download.
+- **Headline numbers (tracker attitude from the second head, nominal noise, Wilson 95 % on rates, bootstrap over trials on medians).**
+  - **Where it works:** 100 % correct (0 wrong, 0 no-solution; Wilson upper bound 0.38 %) in every cell up to 562,328 km at phases
+    0, 45 and 90°, and up to 316,212 km at phase 135° (a thin crescent). 0 star-tracker failures and 0 fit failures in 96,000 trials.
+  - **Range error (median |ΔD|/D):** GEO 0.004 % (2.6 km total position error); 100,000 km 0.011 %; 421,681 km (near lunar
+    distance) 0.11 % (466 km total). Phase 90° is the best case near GEO (0.001 %); phase 135° sits at a flat ~0.09 % from GEO to
+    200,000 km (the crescent's residual shading bias, a fixed fraction of the pixel radius) then collapses.
+  - **Where it fails, and why:** beyond ~560,000 km the disc is under 33 px across and the limb finder's fixed windows (plateau 6 px
+    inside the edge, fit window 14 px) no longer fit inside it. Phase 90° goes to 99 % *wrong* (bias 1.5 % at 749,885 km, 4.1 % at
+    1,000,000 km); phase 135° is 88 % wrong at 562,328 km and at 1,000,000 km returns 56.5 % no-solution (too few limb points) plus
+    43 % wrong. These are confident wrong answers, not honest refusals: the method needs a disc-size-aware limb finder before it is
+    allowed to report beyond ~500,000 km. That is the main engineering finding of the campaign, and it was invisible in the Day 10
+    spot checks at 384,400 km.
+  - **Attitude contribution:** the second head's tracker error (pointing median 6.7", p95 20"; the head's roll becomes the Earth
+    camera's pointing) adds cross-range error only: 2.0 km median at GEO vs 0.13 km with the true attitude, 15 km vs 2.4 km at
+    421,681 km. The range error is unchanged to three digits by the attitude source, as the geometry predicts (range comes from the
+    apparent size, attitude from the direction).
+  - **Oblateness:** fitting a sphere of radius R_EQ to the same limb points gives +0.089 % at GEO (+38 km) against +0.003 % for the
+    WGS84 model, and the gap persists to 749,885 km. The ellipsoid model itself drifts to +0.2 % by 560,000 km: that is the limb
+    finder's small-disc bias, not the shape model.
+  - **Read noise 2×:** no measurable change up to 560,000 km (medians equal to three digits). The error is set by the shading model,
+    not by photon or read noise, which is why more noise does not hurt and why more limb points would not help either.
+- **Honest limits written down.** Synthetic Lambertian Earth without atmosphere, clouds or limb darkening; single exposure; the whole
+  disc always in the frame (no partial Earth); the no-solution reasons are limb-count and tracker failures only, there is no
+  consistency check on the returned position (a wrong answer at 749,885 km passes). A range sanity test from the residuals is
+  the obvious next guard.
+- **Numbers that go to the site (Day 13):** `docs/results/day12/summary.json`.
